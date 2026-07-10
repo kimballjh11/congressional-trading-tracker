@@ -4,8 +4,10 @@
 import json
 import os
 import re
+import requests
 from datetime import datetime, timedelta
 from collections import defaultdict
+from dotenv import load_dotenv
 
 try:
     import yfinance as yf
@@ -22,7 +24,12 @@ from config import (
     POINTS_SPOUSE_DEPENDENT, POINTS_CONTRARIAN_BUY,
     CONTRARIAN_DROP_THRESHOLD, CONTRARIAN_LOOKBACK_DAYS,
     COMMITTEE_SECTOR_MAP,
+    CONGRESS_API_BASE_URL, LEGISLATION_TIMING_LOOKBACK_DAYS,
+    POINTS_LEGISLATION_TIMING,
 )
+
+load_dotenv()
+CONGRESS_API_KEY = os.getenv("CONGRESS_API_KEY", "")
 
 
 # ─── SIGNAL 1: COMMITTEE/SECTOR MATCH ───
@@ -154,25 +161,143 @@ def score_spouse_dependent(trade):
 
 # ─── SIGNAL 6: TIMING VS LEGISLATION ───
 
+_committee_meeting_cache = {}  # (chamber, from_date, to_date) → list of meeting dicts
+
+
+def get_congress_number(date):
+    """Compute the Congress number (e.g. 119) that covers a given date."""
+    return (date.year - 1789) // 2 + 1
+
+
+def _committees_overlap(name_a, name_b):
+    """Loose match between two committee name strings (handles subcommittee naming)."""
+    a, b = name_a.lower(), name_b.lower()
+    return bool(a) and bool(b) and (a in b or b in a)
+
+
+def fetch_committee_meetings(chamber, from_date, to_date):
+    """
+    Fetch committee meetings for a chamber within [from_date, to_date] from the
+    congress.gov API, resolving each meeting's date and committee name(s).
+
+    Requires CONGRESS_API_KEY (see .env.example) — returns [] if unset, on
+    request failure, or on any parsing error, so the rest of the pipeline is
+    unaffected when this optional feature isn't configured.
+    """
+    cache_key = (chamber, from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"))
+    if cache_key in _committee_meeting_cache:
+        return _committee_meeting_cache[cache_key]
+
+    meetings = []
+    if not CONGRESS_API_KEY or chamber not in ("House", "Senate"):
+        _committee_meeting_cache[cache_key] = meetings
+        return meetings
+
+    congress = get_congress_number(to_date)
+
+    try:
+        list_resp = requests.get(
+            f"{CONGRESS_API_BASE_URL}/committee-meeting/{congress}/{chamber.lower()}",
+            params={
+                "api_key": CONGRESS_API_KEY,
+                "format": "json",
+                "limit": 250,
+                "fromDateTime": from_date.strftime("%Y-%m-%dT00:00:00Z"),
+                "toDateTime": to_date.strftime("%Y-%m-%dT23:59:59Z"),
+            },
+            timeout=15,
+        )
+        if list_resp.status_code != 200:
+            print(f"  Congress.gov API returned {list_resp.status_code} for {chamber} meetings")
+            _committee_meeting_cache[cache_key] = meetings
+            return meetings
+
+        for item in list_resp.json().get("committeeMeetings", []):
+            detail_url = item.get("url", "")
+            if not detail_url:
+                continue
+            try:
+                detail_resp = requests.get(
+                    detail_url,
+                    params={"api_key": CONGRESS_API_KEY, "format": "json"},
+                    timeout=10,
+                )
+                if detail_resp.status_code != 200:
+                    continue
+
+                meeting = detail_resp.json().get("committeeMeeting", {})
+                raw_date = meeting.get("date", "")
+                meeting_date = None
+                if raw_date:
+                    try:
+                        meeting_date = datetime.strptime(raw_date[:10], "%Y-%m-%d")
+                    except ValueError:
+                        pass
+
+                committee_names = [c.get("name", "") for c in meeting.get("committees", [])]
+                meetings.append({
+                    "date": meeting_date,
+                    "title": meeting.get("title", ""),
+                    "committees": committee_names,
+                })
+            except requests.RequestException:
+                continue
+    except requests.RequestException as e:
+        print(f"  Congress.gov API request failed: {e}")
+
+    _committee_meeting_cache[cache_key] = meetings
+    return meetings
+
+
 def score_legislation_timing(trade):
     """
-    +20 if there's a committee hearing or bill vote within 30 days
-    of the trade date that matches the stock's sector.
+    +20 if a committee the member sits on held a hearing/meeting within
+    LEGISLATION_TIMING_LOOKBACK_DAYS of the trade date, and that committee
+    maps (via COMMITTEE_SECTOR_MAP) to the stock's sector.
 
-    PLACEHOLDER: Congress.gov API integration is complex and rate-limited.
-    This function structure is ready for implementation.
+    Requires a free congress.gov API key set as CONGRESS_API_KEY in .env
+    (see .env.example). Returns 0 with no error if it's not configured —
+    the rest of the pipeline works without it.
     """
-    # TODO: Implement congress.gov API lookup
-    # Endpoint: https://api.congress.gov/v3/bill
-    # Would check for:
-    #   - Committee hearings within 30 days of trade date
-    #   - Bill votes within 30 days of trade date
-    #   - Match hearing/bill topic to stock sector
-    #
-    # For now, log and return 0
+    if not CONGRESS_API_KEY:
+        return 0, ""
+
+    committees = trade.get("committees", [])
     sector = trade.get("sector", "")
-    if sector:
-        pass  # Legislation check skipped — placeholder for future implementation
+    chamber = trade.get("chamber", "")
+    tx_date = parse_date(trade.get("transaction_date", ""))
+
+    if not committees or not sector or not tx_date or chamber not in ("House", "Senate"):
+        return 0, ""
+
+    window_start = tx_date - timedelta(days=LEGISLATION_TIMING_LOOKBACK_DAYS)
+    window_end = tx_date + timedelta(days=LEGISLATION_TIMING_LOOKBACK_DAYS)
+
+    try:
+        meetings = fetch_committee_meetings(chamber, window_start, window_end)
+    except Exception as e:
+        print(f"  Legislation timing lookup failed: {e}")
+        return 0, ""
+
+    for meeting in meetings:
+        meeting_date = meeting.get("date")
+        if not meeting_date:
+            continue
+        days_apart = abs((meeting_date - tx_date).days)
+        if days_apart > LEGISLATION_TIMING_LOOKBACK_DAYS:
+            continue
+
+        for meeting_comm in meeting.get("committees", []):
+            if not any(_committees_overlap(mc, meeting_comm) for mc in committees):
+                continue
+            for keyword, sectors in COMMITTEE_SECTOR_MAP.items():
+                if keyword.lower() in meeting_comm.lower() and sector in sectors:
+                    return (
+                        POINTS_LEGISLATION_TIMING,
+                        f"Legislation timing: {meeting_comm} met {days_apart}d from trade "
+                        f"date, sector {sector} (+{POINTS_LEGISLATION_TIMING})",
+                    )
+
     return 0, ""
 
 

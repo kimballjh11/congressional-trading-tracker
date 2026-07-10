@@ -122,10 +122,17 @@ def setup_env():
         shutil.copy(os.path.join(PROJECT_DIR, ".env.example"), ENV_FILE)
         return
 
+    print("\n(Optional) The 'Legislation Timing' scoring signal can use a free")
+    print("congress.gov API key to check for related committee hearings.")
+    print("Get one at: https://api.congress.gov/sign-up/")
+    congress_api_key = input("Congress.gov API key (leave blank to skip): ").strip()
+
     with open(ENV_FILE, "w") as f:
         f.write(f"# Gmail SMTP credentials\n")
         f.write(f"GMAIL_ADDRESS={email}\n")
         f.write(f"GMAIL_APP_PASSWORD={app_password}\n")
+        f.write(f"\n# Congress.gov API key (optional — enables Legislation Timing signal)\n")
+        f.write(f"CONGRESS_API_KEY={congress_api_key}\n")
 
     print(f"\nCredentials saved to .env")
     print("(This file is in .gitignore and will NOT be committed.)")

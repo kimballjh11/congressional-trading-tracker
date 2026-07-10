@@ -20,6 +20,14 @@ HOUSE_MEMBER_XML = "https://clerk.house.gov/xml/lists/MemberData.xml"
 SENATE_EFDS_URL = "https://efdsearch.senate.gov"
 SENATE_ASSIGNMENTS_URL = "https://www.senate.gov/general/committee_assignments/assignments.htm"
 
+# ─── OPTIONAL: CONGRESS.GOV API (for Legislation Timing signal) ───
+# Set CONGRESS_API_KEY in your .env to enable Signal 6 below. Free key:
+# https://api.congress.gov/sign-up/
+# Everything else in the pipeline works without it — this is the one
+# optional exception to "no API keys needed."
+CONGRESS_API_BASE_URL = "https://api.congress.gov/v3"
+LEGISLATION_TIMING_LOOKBACK_DAYS = 30  # window (days, before/after the trade) to check for committee meetings
+
 # ─── SCORING THRESHOLDS ───
 # A trade's total score (0–100) determines its tag:
 SCORE_HIGH_ALERT = 76    # score >= 76 → "high_alert"
@@ -47,7 +55,7 @@ POINTS_CLUSTER_2 = 15          # 2 different members
 # Signal 5: Spouse/dependent trade
 POINTS_SPOUSE_DEPENDENT = 10
 
-# Signal 6: Legislation timing (placeholder — not yet implemented)
+# Signal 6: Legislation timing (requires optional CONGRESS_API_KEY, see above)
 POINTS_LEGISLATION_TIMING = 20
 
 # Signal 7: Contrarian buy (stock dropped >10% before purchase)
