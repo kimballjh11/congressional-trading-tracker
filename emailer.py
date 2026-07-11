@@ -139,7 +139,6 @@ def build_report_body(scored_trades, total_filings):
 
     # Count flagged (above routine)
     flagged = sum(len(v) for v in tier_buckets.values())
-    routine_count += len(scored_trades) - flagged
 
     # If nothing noteworthy, send the short version
     if flagged == 0:
