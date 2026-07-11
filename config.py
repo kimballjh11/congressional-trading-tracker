@@ -20,6 +20,10 @@ HOUSE_MEMBER_XML = "https://clerk.house.gov/xml/lists/MemberData.xml"
 SENATE_EFDS_URL = "https://efdsearch.senate.gov"
 SENATE_ASSIGNMENTS_URL = "https://www.senate.gov/general/committee_assignments/assignments.htm"
 
+# Timeout (seconds) applied to all outbound HTTP requests so a slow/unresponsive
+# government site can't hang the pipeline indefinitely.
+REQUEST_TIMEOUT = 30
+
 # ─── SCORING THRESHOLDS ───
 # A trade's total score (0–100) determines its tag:
 SCORE_HIGH_ALERT = 76    # score >= 76 → "high_alert"

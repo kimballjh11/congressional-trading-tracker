@@ -13,7 +13,7 @@ import json
 import os
 from datetime import datetime, timedelta
 
-from config import SEEN_TRADES_FILE, SENATE_EFDS_URL, DATA_DIR
+from config import SEEN_TRADES_FILE, SENATE_EFDS_URL, DATA_DIR, REQUEST_TIMEOUT
 
 BASE_URL = SENATE_EFDS_URL
 REPORT_TYPE_PTR = "11"  # Senate report type code for Periodic Transaction Reports
@@ -33,7 +33,11 @@ def create_session():
 
     # Step 1: Load the home page to get CSRF token and cookies
     print("  Connecting to Senate EFDS...")
-    resp = session.get(f"{BASE_URL}/search/home/")
+    try:
+        resp = session.get(f"{BASE_URL}/search/home/", timeout=REQUEST_TIMEOUT)
+    except requests.RequestException as e:
+        print(f"  Failed to connect to Senate EFDS: {e}")
+        return None
     if resp.status_code != 200:
         print(f"  Failed to load Senate EFDS: status {resp.status_code}")
         return None
@@ -49,17 +53,22 @@ def create_session():
     csrf_token = csrf_match.group(1)
 
     # Step 2: Accept the usage agreement
-    resp = session.post(
-        f"{BASE_URL}/search/home/",
-        data={
-            "prohibition_agreement": "1",
-            "csrfmiddlewaretoken": csrf_token,
-        },
-        headers={
-            "Referer": f"{BASE_URL}/search/home/",
-            "Origin": BASE_URL,
-        },
-    )
+    try:
+        resp = session.post(
+            f"{BASE_URL}/search/home/",
+            data={
+                "prohibition_agreement": "1",
+                "csrfmiddlewaretoken": csrf_token,
+            },
+            headers={
+                "Referer": f"{BASE_URL}/search/home/",
+                "Origin": BASE_URL,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as e:
+        print(f"  Failed to accept Senate EFDS usage agreement: {e}")
+        return None
 
     # The CSRF token for API calls comes from the cookie
     csrf_cookie = session.cookies.get("csrftoken", "")
@@ -100,16 +109,21 @@ def search_ptr_filings(session, start_date=None, end_date=None):
         "last_name": "",
     }
 
-    resp = session.post(
-        f"{BASE_URL}/search/report/data/",
-        data=data,
-        headers={
-            "Referer": f"{BASE_URL}/search/",
-            "Origin": BASE_URL,
-            "X-Requested-With": "XMLHttpRequest",
-            "X-CSRFToken": csrf_cookie,
-        },
-    )
+    try:
+        resp = session.post(
+            f"{BASE_URL}/search/report/data/",
+            data=data,
+            headers={
+                "Referer": f"{BASE_URL}/search/",
+                "Origin": BASE_URL,
+                "X-Requested-With": "XMLHttpRequest",
+                "X-CSRFToken": csrf_cookie,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as e:
+        print(f"  Search failed: {e}")
+        return []
 
     if resp.status_code != 200:
         print(f"  Search failed: status {resp.status_code}")
@@ -142,16 +156,21 @@ def search_ptr_filings(session, start_date=None, end_date=None):
         data["start"] = str(len(filings))
         data["draw"] = str(int(data["draw"]) + 1)
 
-        resp = session.post(
-            f"{BASE_URL}/search/report/data/",
-            data=data,
-            headers={
-                "Referer": f"{BASE_URL}/search/",
-                "Origin": BASE_URL,
-                "X-Requested-With": "XMLHttpRequest",
-                "X-CSRFToken": csrf_cookie,
-            },
-        )
+        try:
+            resp = session.post(
+                f"{BASE_URL}/search/report/data/",
+                data=data,
+                headers={
+                    "Referer": f"{BASE_URL}/search/",
+                    "Origin": BASE_URL,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRFToken": csrf_cookie,
+                },
+                timeout=REQUEST_TIMEOUT,
+            )
+        except requests.RequestException as e:
+            print(f"  Pagination request failed: {e}")
+            break
 
         if resp.status_code != 200 or "Site Under Maintenance" in resp.text:
             break
@@ -235,7 +254,11 @@ def load_seen_trades():
     """Load seen filing IDs, returns a set."""
     if os.path.exists(SEEN_TRADES_FILE):
         with open(SEEN_TRADES_FILE, "r") as f:
-            return set(json.load(f))
+            try:
+                return set(json.load(f))
+            except (json.JSONDecodeError, ValueError):
+                print(f"  Warning: {SEEN_TRADES_FILE} is corrupt or unreadable; starting with an empty seen set.")
+                return set()
     return set()
 
 
