@@ -53,7 +53,7 @@ POINTS_LEGISLATION_TIMING = 20
 # Signal 7: Contrarian buy (stock dropped >10% before purchase)
 POINTS_CONTRARIAN_BUY = 10
 CONTRARIAN_DROP_THRESHOLD = -10  # percent change threshold
-CONTRARIAN_LOOKBACK_DAYS = 35    # days of price history to check
+CONTRARIAN_LOOKBACK_DAYS = 30    # days of price history to check (matches README / scoring docstring)
 
 # ─── COMMITTEE → SECTOR MAPPINGS ───
 # Maps committee name keywords to stock sectors they oversee.
