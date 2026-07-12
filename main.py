@@ -3,7 +3,7 @@
 import os
 from datetime import datetime
 
-from config import RUN_LOG_FILE, DATA_DIR
+from config import RUN_LOG_FILE, DATA_DIR, SCORE_NOTEWORTHY
 from scraper import get_new_trades
 from senate_scraper import get_new_senate_trades
 from parser import parse_all_filings
@@ -97,7 +97,7 @@ def run():
         log(f"ERROR in scorer: {e}")
         error_occurred = True
 
-    trades_flagged = sum(1 for t in scored if t.get("score", 0) > 25)
+    trades_flagged = sum(1 for t in scored if t.get("score", 0) >= SCORE_NOTEWORTHY)
 
     # ─── STEP 5: EMAIL ───
     try:
