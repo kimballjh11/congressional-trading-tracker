@@ -31,24 +31,40 @@ def score_committee_match(trade):
     """
     +25 if a member's committee relates to the stock's sector.
     +10 for Ways and Means (affects all sectors via tax policy).
+
+    These are independent signals, so a member sitting on both Ways and
+    Means and a sector-specific committee (e.g. Energy and Commerce)
+    accumulates both bonuses rather than only the first one found.
     """
     committees = trade.get("committees", [])
     sector = trade.get("sector", "")
     if not committees or not sector:
         return 0, ""
 
-    # Check Ways and Means first (special case)
+    points = 0
+    reasons = []
+
+    # Ways and Means (special case — applies to every sector via tax policy)
     for comm in committees:
         if "Ways and Means" in comm:
-            return POINTS_WAYS_AND_MEANS, f"Committee match: {comm} → {sector} (tax policy, +{POINTS_WAYS_AND_MEANS})"
+            points += POINTS_WAYS_AND_MEANS
+            reasons.append(f"Committee match: {comm} → {sector} (tax policy, +{POINTS_WAYS_AND_MEANS})")
+            break
 
-    # Check specific committee-sector mappings
+    # Specific committee-sector mappings (take the first match only, so a
+    # member on several committees overseeing the same sector isn't scored
+    # multiple times for what is effectively one signal)
     for comm in committees:
         for keyword, sectors in COMMITTEE_SECTOR_MAP.items():
             if keyword.lower() in comm.lower() and sector in sectors:
-                return POINTS_COMMITTEE_MATCH, f"Committee match: {comm} → {sector} (+{POINTS_COMMITTEE_MATCH})"
+                points += POINTS_COMMITTEE_MATCH
+                reasons.append(f"Committee match: {comm} → {sector} (+{POINTS_COMMITTEE_MATCH})")
+                break
+        else:
+            continue
+        break
 
-    return 0, ""
+    return points, " ".join(reasons)
 
 
 # ─── SIGNAL 2: LARGE TRADE SIZE ───
@@ -134,19 +150,24 @@ def score_cluster_trades(trades):
 
 def score_spouse_dependent(trade):
     """+10 if the trade was made by a spouse or dependent."""
-    owner = trade.get("owner", "").upper()
+    owner_raw = trade.get("owner", "").strip()
+    owner = owner_raw.upper()
     description = trade.get("description", "").lower()
     asset = trade.get("asset", "").lower()
 
-    # Owner codes: SP = spouse, DC = dependent child, JT = joint
-    spouse_owners = {"SP", "DC"}
+    # House PDF owner codes: SP = spouse, DC = dependent child, JT = joint.
+    # Senate eFD HTML reports label the same ownership types as full words
+    # (e.g. "Spouse", "Dependent Child", "Joint") rather than codes, so both
+    # forms are normalized here.
+    spouse_owners = {"SP", "DC", "SPOUSE", "DEPENDENT", "DEPENDENT CHILD"}
+    joint_owners = {"JT", "JOINT", "JOINT TENANT", "JOINT TENANTS"}
     spouse_keywords = ["spouse", "dependent", "joint"]
 
     if owner in spouse_owners:
-        label = "Spouse" if owner == "SP" else "Dependent"
-        return POINTS_SPOUSE_DEPENDENT, f"{label} trade (owner: {owner}, +{POINTS_SPOUSE_DEPENDENT})"
+        label = "Dependent" if "DEPENDENT" in owner or owner == "DC" else "Spouse"
+        return POINTS_SPOUSE_DEPENDENT, f"{label} trade (owner: {owner_raw}, +{POINTS_SPOUSE_DEPENDENT})"
 
-    if owner == "JT" or any(kw in description for kw in spouse_keywords):
+    if owner in joint_owners or any(kw in description for kw in spouse_keywords):
         return POINTS_SPOUSE_DEPENDENT, f"Joint/spouse trade (+{POINTS_SPOUSE_DEPENDENT})"
 
     return 0, ""
