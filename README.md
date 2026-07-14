@@ -176,6 +176,8 @@ rm data/seen_trades.json
 ### Senate scraper returns 503
 The Senate EFDS site (`efdsearch.senate.gov`) is occasionally under maintenance. The pipeline handles this gracefully — it logs the issue and continues with House filings only. Senate scraping will resume automatically when the site comes back.
 
+Separately, the Senate search normally only looks back 45 days (matching the disclosure deadline), but the pipeline tracks the last successful scan date in `data/senate_scan_cursor.json`. If the pipeline is down for longer than 45 days, the next run automatically widens its search window back to the last successful scan (capped at 400 days) instead of silently skipping older PTRs. The cursor only advances after a search actually completes, so a maintenance outage won't cause the window to shrink.
+
 ### "externally-managed-environment" error
 This happens on newer macOS/Linux systems that prevent global pip installs. The setup script avoids this by using a virtual environment. If you see this error, make sure you ran `setup.py` (which creates a venv) rather than installing packages globally.
 

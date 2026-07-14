@@ -13,7 +13,15 @@ import json
 import os
 from datetime import datetime, timedelta
 
-from config import SEEN_TRADES_FILE, SENATE_EFDS_URL, DATA_DIR
+from config import (
+    SEEN_TRADES_FILE,
+    SENATE_EFDS_URL,
+    DATA_DIR,
+    SENATE_SCAN_CURSOR_FILE,
+    SENATE_DEFAULT_LOOKBACK_DAYS,
+    SENATE_MAX_LOOKBACK_DAYS,
+    SENATE_SCAN_OVERLAP_DAYS,
+)
 
 BASE_URL = SENATE_EFDS_URL
 REPORT_TYPE_PTR = "11"  # Senate report type code for Periodic Transaction Reports
@@ -73,10 +81,15 @@ def create_session():
 def search_ptr_filings(session, start_date=None, end_date=None):
     """
     Search for PTR filings using the DataTables server-side API.
-    Returns a list of filing dicts or empty list on failure.
+    Returns a tuple (filings, ok):
+      - filings: list of filing dicts (possibly empty)
+      - ok: True if the search actually completed (even with 0 results),
+            False if it failed (bad status, maintenance page, bad JSON) —
+            callers should use this to decide whether it's safe to advance
+            the "last successful scan" cursor.
     """
     if start_date is None:
-        start_date = (datetime.now() - timedelta(days=45)).strftime("%m/%d/%Y")
+        start_date = (datetime.now() - timedelta(days=SENATE_DEFAULT_LOOKBACK_DAYS)).strftime("%m/%d/%Y")
     if end_date is None:
         end_date = datetime.now().strftime("%m/%d/%Y")
 
@@ -113,20 +126,20 @@ def search_ptr_filings(session, start_date=None, end_date=None):
 
     if resp.status_code != 200:
         print(f"  Search failed: status {resp.status_code}")
-        return []
+        return [], False
 
     # Check if we got the maintenance page instead of JSON
     if "Site Under Maintenance" in resp.text:
         print("  Senate EFDS search backend is under maintenance.")
         print("  The front-end loads but the search API is temporarily down.")
         print("  Senate filings will be skipped for this run.")
-        return []
+        return [], False
 
     try:
         result = resp.json()
     except (json.JSONDecodeError, ValueError):
         print("  Failed to parse search results as JSON")
-        return []
+        return [], False
 
     total = result.get("recordsTotal", 0)
     print(f"  Total PTR filings found: {total}")
@@ -170,7 +183,7 @@ def search_ptr_filings(session, start_date=None, end_date=None):
             if filing:
                 filings.append(filing)
 
-    return filings
+    return filings, True
 
 
 def parse_search_row(row):
@@ -246,6 +259,60 @@ def save_seen_trades(seen):
         json.dump(list(seen), f)
 
 
+def load_last_scan_date():
+    """
+    Load the date (as a datetime) through which the Senate search has been
+    successfully scanned. Returns None if no cursor has been saved yet
+    (e.g. first run, or a corrupt cursor file).
+    """
+    if not os.path.exists(SENATE_SCAN_CURSOR_FILE):
+        return None
+    try:
+        with open(SENATE_SCAN_CURSOR_FILE, "r") as f:
+            data = json.load(f)
+        return datetime.strptime(data["last_scan_date"], "%m/%d/%Y")
+    except (json.JSONDecodeError, ValueError, KeyError, OSError):
+        print("  Warning: could not read Senate scan cursor, falling back to default lookback")
+        return None
+
+
+def save_last_scan_date(date):
+    """Persist the date through which the Senate search successfully ran."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(SENATE_SCAN_CURSOR_FILE, "w") as f:
+        json.dump({"last_scan_date": date.strftime("%m/%d/%Y")}, f)
+
+
+def compute_search_start_date(now=None):
+    """
+    Decide how far back the Senate search should look.
+
+    Normally this is just the default lookback window (matches the 45-day
+    disclosure deadline). But if the last successful scan is older than
+    that, extend the window back to the last successful scan (minus a
+    small overlap buffer) so a period of downtime doesn't cause PTRs
+    outside the default window to be silently and permanently missed.
+    The window is still capped at SENATE_MAX_LOOKBACK_DAYS so a stale or
+    corrupt cursor can't trigger an unbounded scan.
+    """
+    if now is None:
+        now = datetime.now()
+
+    default_start = now - timedelta(days=SENATE_DEFAULT_LOOKBACK_DAYS)
+    max_start = now - timedelta(days=SENATE_MAX_LOOKBACK_DAYS)
+
+    last_scan = load_last_scan_date()
+    if last_scan is None:
+        return default_start
+
+    cursor_start = last_scan - timedelta(days=SENATE_SCAN_OVERLAP_DAYS)
+    # Use whichever is earlier (further back) between the default window
+    # and the cursor, but never go back further than the max cap.
+    start = min(default_start, cursor_start)
+    start = max(start, max_start)
+    return start
+
+
 def get_new_senate_trades():
     """
     MAIN FUNCTION — Fetch new Senate PTR filings.
@@ -260,7 +327,11 @@ def get_new_senate_trades():
         print("Failed to establish Senate EFDS session")
         return []
 
-    filings = search_ptr_filings(session)
+    now = datetime.now()
+    start_date = compute_search_start_date(now).strftime("%m/%d/%Y")
+    end_date = now.strftime("%m/%d/%Y")
+
+    filings, ok = search_ptr_filings(session, start_date=start_date, end_date=end_date)
 
     new_filings = []
     for filing in filings:
@@ -269,6 +340,14 @@ def get_new_senate_trades():
             seen.add(filing["filing_id"])
 
     save_seen_trades(seen)
+
+    # Only advance the cursor if the search actually completed. On failure
+    # (maintenance page, bad status, bad JSON) we keep the old cursor so the
+    # next run retries the same window instead of silently narrowing it.
+    if ok:
+        save_last_scan_date(now)
+    else:
+        print("  Search did not complete successfully — scan cursor not advanced, will retry same window next run.")
 
     print(f"New Senate filings found: {len(new_filings)}")
     return new_filings
