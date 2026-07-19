@@ -86,6 +86,62 @@ def parse_trades_from_text(text):
     return trades
 
 
+# Lines that signal "this is NOT a continuation of the wrapped Description
+# text above it" — used by extract_description() below to decide where a
+# multi-line description ends. These mirror the boundary markers used
+# elsewhere in this file to detect the start of the next field/trade/page:
+#   - another null-padded field label (Filing Status/Subholding Of/Location/
+#     Comment: all render as "<Letter>\x00*...:")
+#   - a new owner-coded trade starting (SP/DC/JT)
+#   - a transaction-type letter immediately followed by a date, which marks
+#     the start of a (self-owned, un-prefixed) trade
+#   - the repeated table header on multi-page filings
+#   - the trailing footnote
+_FIELD_LABEL_LINE = re.compile(r"^[A-Za-z]\x00.*?:")
+_OWNER_CODE_LINE = re.compile(r"^(SP|DC|JT)\s")
+_TX_TYPE_DATE = re.compile(r"\b[PSE]\s+(\(partial\)\s+)?\d{2}/\d{2}/\d{4}")
+_PAGE_HEADER_LINE = re.compile(r"^ID Owner Asset")
+_FOOTNOTE_LINE = re.compile(r"^\* For the complete list")
+
+
+def extract_description(block):
+    """
+    Extract the Description field, which frequently wraps across multiple
+    lines (e.g. spinoff explanations, itemized partial-sale breakdowns,
+    bond terms). A regex anchored on a single line would silently truncate
+    these to just their first line, so instead we find the "Description:"
+    label and then keep consuming subsequent lines as long as they don't
+    look like the start of a new field, a new trade, or the page
+    header/footnote — the wrapped lines are joined with a space since the
+    line break is just a PDF rendering artifact, not part of the sentence.
+    """
+    desc_match = re.search(r"D\x00*\w*\s*:\s*(.+)", block)
+    if not desc_match:
+        desc_match = re.search(r"D          :\s*(.+)", block)
+    if not desc_match:
+        return ""
+
+    parts = [desc_match.group(1).strip()]
+    # The character right after the matched (first) line is always the "\n"
+    # that ended it, so strip that one separator before splitting into the
+    # remaining lines — otherwise the leading empty string it produces would
+    # be mistaken for a genuine blank line and stop consumption immediately.
+    for line in block[desc_match.end():].lstrip("\n").split("\n"):
+        if not line.strip():
+            break
+        if (
+            _FIELD_LABEL_LINE.match(line)
+            or _OWNER_CODE_LINE.match(line)
+            or _TX_TYPE_DATE.search(line)
+            or _PAGE_HEADER_LINE.match(line)
+            or _FOOTNOTE_LINE.match(line)
+        ):
+            break
+        parts.append(line.strip())
+
+    return " ".join(parts)
+
+
 def parse_single_trade(block):
     """
     Parse a single trade block into structured data.
@@ -113,12 +169,8 @@ def parse_single_trade(block):
         trade["owner"] = owner_match.group(1)
         block = block[owner_match.end():]
 
-    # Extract description if present
-    desc_match = re.search(r"D\x00*\w*\s*:\s*(.+?)(?:\n|$)", block)
-    if not desc_match:
-        desc_match = re.search(r"D          :\s*(.+?)(?:\n|$)", block)
-    if desc_match:
-        trade["description"] = desc_match.group(1).strip()
+    # Extract description if present (may wrap across multiple lines)
+    trade["description"] = extract_description(block)
 
     # Extract ticker symbol from parentheses, e.g., (FERG), (NFLX), (STT)
     ticker_match = re.search(r"\(([A-Z]{1,5})\)", block)
