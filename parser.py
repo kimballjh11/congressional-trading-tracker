@@ -9,7 +9,7 @@ import os
 import io
 from bs4 import BeautifulSoup
 
-from config import PARSED_TRADES_FILE, DATA_DIR
+from config import PARSED_TRADES_FILE, DATA_DIR, OCR_UNPARSED_DIR
 
 
 def download_pdf(url):
@@ -30,6 +30,62 @@ def extract_text_from_pdf(pdf_bytes):
             if page_text:
                 text += page_text + "\n"
     return text
+
+
+def ocr_extract_text_from_pdf(pdf_bytes, dpi=300):
+    """
+    Fallback text extraction for image-only (scanned) PDFs that have no
+    extractable text layer — renders each page to an image and runs it
+    through Tesseract OCR.
+
+    This is a best-effort recovery path, not a hard pipeline requirement:
+    OCR support (the `pytesseract` package and the `tesseract-ocr` system
+    binary) is optional. If either is missing, or rendering/OCR fails for
+    any reason, this quietly returns "" so callers fall back to the same
+    "no text extracted" handling they already have.
+    """
+    try:
+        import pypdfium2 as pdfium
+        import pytesseract
+    except ImportError:
+        return ""
+
+    text = ""
+    try:
+        pdf_bytes.seek(0)
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        try:
+            for page in pdf:
+                bitmap = page.render(scale=dpi / 72)
+                image = bitmap.to_pil()
+                page_text = pytesseract.image_to_string(image)
+                if page_text:
+                    text += page_text + "\n"
+                page.close()
+        finally:
+            pdf.close()
+    except Exception as e:
+        print(f"  OCR fallback failed: {e}")
+        return ""
+
+    return text
+
+
+def save_ocr_text_for_manual_review(filing_id, text):
+    """
+    Save OCR-recovered text that the structured trade parser couldn't turn
+    into any trades. OCR output for scanned tables is usually too garbled
+    (columns interleaved, headers reordered) for the regex-based parser —
+    which is tuned to pdfplumber's exact text-layer rendering — to extract
+    structured trades from reliably. Saving the raw text means these
+    filings are recoverable by a human instead of silently lost forever.
+    """
+    os.makedirs(OCR_UNPARSED_DIR, exist_ok=True)
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "_", filing_id)
+    path = os.path.join(OCR_UNPARSED_DIR, f"{safe_id}.txt")
+    with open(path, "w") as f:
+        f.write(text)
+    return path
 
 
 def extract_filer_info(text):
@@ -288,13 +344,28 @@ def parse_house_filing(filing):
     if not pdf_bytes:
         return []
 
+    used_ocr = False
     text = extract_text_from_pdf(pdf_bytes)
     if not text:
-        print(f"  No text extracted from PDF")
-        return []
+        print(f"  No text extracted from PDF text layer (filing {filing['filing_id']}), trying OCR fallback...")
+        text = ocr_extract_text_from_pdf(pdf_bytes)
+        if text:
+            used_ocr = True
+            print(f"  OCR fallback recovered text for filing {filing['filing_id']}")
+        else:
+            print(f"  OCR fallback could not recover text for filing {filing['filing_id']} — unrecoverable")
+            return []
 
     name, state = extract_filer_info(text)
     raw_trades = parse_trades_from_text(text)
+
+    if used_ocr and not raw_trades:
+        # OCR text rarely lines up cleanly with the structured trade parser
+        # (see docstring on save_ocr_text_for_manual_review) — save it for
+        # manual review instead of silently dropping the filing.
+        saved_path = save_ocr_text_for_manual_review(filing["filing_id"], text)
+        print(f"  Could not extract structured trades from OCR text for filing {filing['filing_id']} "
+              f"— raw text saved to {saved_path} for manual review")
 
     trades = []
     for t in raw_trades:

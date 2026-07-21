@@ -3,3 +3,5 @@ python-dotenv
 pdfplumber
 yfinance
 beautifulsoup4
+pypdfium2
+pytesseract

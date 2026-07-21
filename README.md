@@ -49,6 +49,28 @@ Installed automatically by `setup.py`:
 | `pdfplumber` | PDF text extraction (House filings) |
 | `yfinance` | Stock price, sector, and industry data |
 | `python-dotenv` | Load Gmail credentials from `.env` |
+| `pypdfium2` | Renders PDF pages to images for OCR fallback |
+| `pytesseract` | OCR fallback for scanned (image-only) House PDFs |
+
+### Optional: OCR for scanned PDFs
+
+A small percentage of House PTR filings are scanned images with no extractable
+text layer. The parser automatically falls back to OCR (via `pytesseract`) for
+these filings, but OCR requires the `tesseract-ocr` system binary to be
+installed separately — it's not a Python package and can't be installed by
+`pip`:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install tesseract-ocr
+
+# macOS
+brew install tesseract
+```
+
+If `tesseract-ocr` isn't installed, the pipeline still works fine — it just
+logs that the filing was unrecoverable and skips it, exactly as it did before
+OCR support was added.
 
 ## How the Pipeline Works
 
