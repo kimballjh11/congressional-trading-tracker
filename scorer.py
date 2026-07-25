@@ -196,7 +196,11 @@ def score_contrarian(trade):
 
     try:
         start = tx_date - timedelta(days=CONTRARIAN_LOOKBACK_DAYS)
-        end = tx_date - timedelta(days=1)
+        # yfinance's `end` is exclusive, so passing tx_date itself (not tx_date - 1)
+        # is what correctly includes the last trading day *before* the purchase.
+        # Subtracting an extra day here would silently drop that most-recent
+        # pre-purchase price point from the window.
+        end = tx_date
         stock = yf.Ticker(ticker)
         hist = stock.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
 
