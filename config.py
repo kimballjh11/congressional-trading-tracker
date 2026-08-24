@@ -12,6 +12,7 @@ SEEN_TRADES_FILE = os.path.join(DATA_DIR, "seen_trades.json")
 PARSED_TRADES_FILE = os.path.join(DATA_DIR, "parsed_trades.json")
 ENRICHED_TRADES_FILE = os.path.join(DATA_DIR, "enriched_trades.json")
 SCORED_TRADES_FILE = os.path.join(DATA_DIR, "scored_trades.json")
+CLUSTER_HISTORY_FILE = os.path.join(DATA_DIR, "cluster_history.json")
 RUN_LOG_FILE = os.path.join(DATA_DIR, "run_log.txt")
 
 # ─── DATA SOURCES ───
@@ -43,6 +44,12 @@ POINTS_DELAY_LATE = 8          # 30–37 days
 # Signal 4: Cluster trading (multiple members on same ticker)
 POINTS_CLUSTER_3_PLUS = 20     # 3+ different members
 POINTS_CLUSTER_2 = 15          # 2 different members
+# How far back (in days) to look for other members' trades in the same
+# ticker. The pipeline only scores newly-scraped filings each run, so
+# without a persisted history, two members who file PTRs for the same
+# stock a few days apart (very common, since disclosure delays vary
+# member to member) would never be detected as a cluster.
+CLUSTER_LOOKBACK_DAYS = 90
 
 # Signal 5: Spouse/dependent trade
 POINTS_SPOUSE_DEPENDENT = 10
