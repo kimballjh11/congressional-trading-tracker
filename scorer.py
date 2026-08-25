@@ -292,9 +292,13 @@ def score_trades():
             reasons.append(reason)
 
         # Signal 7: Contrarian buy
+        # score_contrarian() returns a diagnostic reason string even when
+        # no points are scored (e.g. "+2.3% in prior 30 days (no signal)") —
+        # surface it whenever it's present, not only when points fired.
         pts, reason = score_contrarian(trade)
         if pts:
             total_score += pts
+        if reason:
             reasons.append(reason)
 
         # Cap at 100
