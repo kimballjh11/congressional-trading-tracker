@@ -72,7 +72,35 @@ def parse_trades_from_text(text):
     # (1-2 uppercase letters) at the start of a line, followed by the asset.
     # "Filing Status:" lines mark metadata that follows each trade.
     # We split on owner codes that start a new trade entry.
-    trade_blocks = re.split(r"\n(?=[A-Z]{1,2} [A-Z])", trade_section)
+    #
+    # NOTE: this loose "[A-Z]{1,2} [A-Z]" pattern also incidentally matches
+    # the repeated page-header boilerplate ("ID Owner Asset Transaction
+    # Date...") that PDF text extraction leaves in the middle of multi-page
+    # filings ("ID" + space + "Owner"), which is what actually splits
+    # consecutive *self-owned* trades (no real owner code) apart on those
+    # pages today. Don't narrow this pattern down to just SP/DC/JT without
+    # separately handling that — doing so was tried and caused a severe
+    # regression (self-owned multi-page filings collapsed from dozens of
+    # trades down to 1), confirmed live 2026-08-28.
+    #
+    # Separately: the asset name after a real SP/DC/JT owner code isn't
+    # always capitalized — several real tickers/brand names start with a
+    # lowercase letter (e.g. "iShares Bitcoin Trust ETF", "e.l.f. Beauty,
+    # Inc.", "xAI"). The original uppercase-only pattern missed those trade
+    # boundaries entirely, silently merging the whole next trade (dates,
+    # amount, ticker, everything) into the end of the previous one instead
+    # of splitting it out — the merged trade's own data was lost, and its
+    # ticker could even leak into the preceding trade's ticker field.
+    # Confirmed live 2026-08-28 across real 2026 filings (e.g.
+    # house_20034346, house_20035130, house_20033736). Fixed by adding a
+    # second alternative that requires an actual owner code (SP/DC/JT) when
+    # allowing a lowercase letter to follow, rather than loosening the
+    # existing pattern to any 1-2 uppercase letters — that broader change
+    # was also tried and caused a false split mid-asset-name (e.g. "JT BP
+    # p.l.c. Common Stock" splitting into a phantom "BP" trade, since "BP"
+    # happens to be followed by the lowercase "p.l.c."), confirmed live via
+    # house_20034301 in the same sample.
+    trade_blocks = re.split(r"\n(?=[A-Z]{1,2} [A-Z]|(?:SP|DC|JT) [a-z])", trade_section)
 
     for block in trade_blocks:
         block = block.strip()
