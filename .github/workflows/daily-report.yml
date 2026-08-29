@@ -1,0 +1,34 @@
+name: Daily Congressional Trade Report
+
+on:
+  schedule:
+    # 8:00 AM US Eastern (13:00 UTC during EST, 12:00 UTC during EDT)
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore pipeline data cache
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: pipeline-data
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python main.py
