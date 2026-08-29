@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -26,6 +26,19 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Verify Gmail secrets
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          if [ -z "$GMAIL_ADDRESS" ] || [ -z "$GMAIL_APP_PASSWORD" ]; then
+            echo "::error::Gmail secrets are missing or empty."
+            echo "Go to Settings → Secrets and variables → Actions → Repository secrets"
+            echo "Add exactly: GMAIL_ADDRESS and GMAIL_APP_PASSWORD"
+            exit 1
+          fi
+          echo "Gmail secrets are configured."
 
       - name: Run pipeline
         env:

@@ -235,14 +235,21 @@ def build_subject(scored_trades, no_new_filings=False):
     return f"Congressional Trade Alert ({date_str}): No noteworthy trades"
 
 
+def _credentials_error(setting_name):
+    if os.getenv("GITHUB_ACTIONS"):
+        print(f"ERROR: {setting_name} secret is missing or empty.")
+        print("Add it under: Settings → Secrets and variables → Actions → Repository secrets")
+    else:
+        print(f"ERROR: Set {setting_name} in your .env file.")
+    return False
+
+
 def _send(subject, html_body):
     """Internal: send an HTML email via Gmail SMTP."""
     if not GMAIL_ADDRESS or GMAIL_ADDRESS == "your_email@gmail.com":
-        print("ERROR: Set GMAIL_ADDRESS in your .env file.")
-        return False
+        return _credentials_error("GMAIL_ADDRESS")
     if not GMAIL_APP_PASSWORD or "xxxx" in GMAIL_APP_PASSWORD.lower():
-        print("ERROR: Set GMAIL_APP_PASSWORD in your .env file.")
-        return False
+        return _credentials_error("GMAIL_APP_PASSWORD")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject

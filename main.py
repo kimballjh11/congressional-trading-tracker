@@ -30,6 +30,11 @@ def run():
     email_sent = False
     error_occurred = False
 
+    def finish():
+        if not email_sent and os.getenv("GITHUB_ACTIONS"):
+            print("ERROR: Email was not sent. Failing CI run.")
+            raise SystemExit(1)
+
     try:
         # ─── STEP 1: SCRAPE HOUSE ───
         print("=" * 60)
@@ -71,6 +76,7 @@ def run():
         email_status = "sent" if email_sent else "FAILED"
         status = "SUCCESS" if not error_occurred else "PARTIAL"
         log(f"Pipeline {status} — 0 new filings, email {email_status}")
+        finish()
         return
 
     # ─── STEP 2: PARSE ───
@@ -98,6 +104,7 @@ def run():
         email_status = "sent" if email_sent else "FAILED"
         status = "SUCCESS" if not error_occurred else "PARTIAL"
         log(f"Pipeline {status} — {filings_count} filings, 0 trades parsed, email {email_status}")
+        finish()
         return
 
     # ─── STEP 3: ENRICH ───
@@ -142,6 +149,7 @@ def run():
     print("\n" + "=" * 60)
     print("Pipeline complete.")
     print("=" * 60)
+    finish()
 
 
 if __name__ == "__main__":
