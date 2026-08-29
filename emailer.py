@@ -203,9 +203,32 @@ def build_report_body(scored_trades, total_filings):
     </html>"""
 
 
-def build_subject(scored_trades):
+def build_no_filings_body():
+    """Build the HTML email for days with no new PTR filings."""
+    date_str = datetime.now().strftime("%B %d, %Y")
+    return f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 16px;">
+        <h2 style="color: #1a365d;">Congressional Trade Alert</h2>
+        <p style="color: #555;">{date_str}</p>
+        <hr style="border: none; border-top: 2px solid #1a365d; margin-bottom: 20px;">
+        <p style="font-size: 16px; color: #333;">No new congressional trade filings today.</p>
+        <p style="color: #888; font-size: 13px;">
+            The pipeline checked House and Senate disclosure sites and found no new PTR filings
+            since the last run.
+        </p>
+        <p style="color: #aaa; font-size: 11px; margin-top: 24px;">
+            Source: disclosures-clerk.house.gov &bull; efdsearch.senate.gov
+        </p>
+    </body>
+    </html>"""
+
+
+def build_subject(scored_trades, no_new_filings=False):
     """Build the email subject line."""
     date_str = datetime.now().strftime("%m/%d")
+    if no_new_filings:
+        return f"Congressional Trade Alert ({date_str}): No new filings"
     flagged = sum(1 for t in scored_trades if t.get("tag", "routine") != "routine")
     if flagged:
         return f"Congressional Trade Alert ({date_str}): {flagged} flagged trade(s)"
@@ -217,7 +240,7 @@ def _send(subject, html_body):
     if not GMAIL_ADDRESS or GMAIL_ADDRESS == "your_email@gmail.com":
         print("ERROR: Set GMAIL_ADDRESS in your .env file.")
         return False
-    if not GMAIL_APP_PASSWORD or GMAIL_APP_PASSWORD == "your_app_password_here":
+    if not GMAIL_APP_PASSWORD or "xxxx" in GMAIL_APP_PASSWORD.lower():
         print("ERROR: Set GMAIL_APP_PASSWORD in your .env file.")
         return False
 
@@ -246,17 +269,18 @@ def _send(subject, html_body):
         return False
 
 
-def send_report(scored_trades, total_filings=None):
+def send_report(scored_trades, total_filings=None, no_new_filings=False):
     """
     Send the scored trade report.
     Called by main.py with scored trade data.
     """
+    if no_new_filings:
+        subject = build_subject([], no_new_filings=True)
+        body = build_no_filings_body()
+        return _send(subject, body)
+
     if total_filings is None:
         total_filings = len(set(t.get("filing_id", "") for t in scored_trades))
-
-    if not scored_trades:
-        print("No scored trades to report.")
-        return False
 
     subject = build_subject(scored_trades)
     body = build_report_body(scored_trades, total_filings)

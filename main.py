@@ -58,7 +58,19 @@ def run():
           f"(House: {len(house_filings)}, Senate: {len(senate_filings)})")
 
     if not all_filings:
-        log(f"Pipeline finished — no new filings found")
+        try:
+            print("\n" + "=" * 60)
+            print("STEP 5: Sending daily email report")
+            print("=" * 60)
+            email_sent = send_report([], no_new_filings=True)
+        except Exception as e:
+            log(f"ERROR in emailer: {e}")
+            error_occurred = True
+            email_sent = False
+
+        email_status = "sent" if email_sent else "FAILED"
+        status = "SUCCESS" if not error_occurred else "PARTIAL"
+        log(f"Pipeline {status} — 0 new filings, email {email_status}")
         return
 
     # ─── STEP 2: PARSE ───
@@ -73,7 +85,19 @@ def run():
         error_occurred = True
 
     if not trades:
-        log(f"Pipeline finished — {filings_count} filings, 0 trades parsed")
+        try:
+            print("\n" + "=" * 60)
+            print("STEP 5: Sending daily email report")
+            print("=" * 60)
+            email_sent = send_report([], total_filings=filings_count)
+        except Exception as e:
+            log(f"ERROR in emailer: {e}")
+            error_occurred = True
+            email_sent = False
+
+        email_status = "sent" if email_sent else "FAILED"
+        status = "SUCCESS" if not error_occurred else "PARTIAL"
+        log(f"Pipeline {status} — {filings_count} filings, 0 trades parsed, email {email_status}")
         return
 
     # ─── STEP 3: ENRICH ───
