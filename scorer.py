@@ -197,7 +197,11 @@ def score_contrarian(trade):
     try:
         start = tx_date - timedelta(days=CONTRARIAN_LOOKBACK_DAYS)
         end = tx_date - timedelta(days=1)
-        stock = yf.Ticker(ticker)
+        # Class shares are filed with a dot (e.g. "BRK.B") but yfinance only
+        # recognizes the hyphenated form (e.g. "BRK-B") — see the matching
+        # helper in enricher.py's fetch_stock_info() for the same fix.
+        yf_ticker = ticker.replace(".", "-")
+        stock = yf.Ticker(yf_ticker)
         hist = stock.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
 
         if hist.empty or len(hist) < 5:
