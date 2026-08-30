@@ -140,7 +140,20 @@ def parse_single_trade(block):
     if len(dollar_amounts) >= 2:
         trade["amount"] = f"{dollar_amounts[0]} - {dollar_amounts[1]}"
     elif len(dollar_amounts) == 1:
-        trade["amount"] = dollar_amounts[0]
+        # Spouse/dependent-child trades have their own top amount bracket,
+        # an open-ended "Over $1,000,000" (no upper bound), rendered as just
+        # "Spouse/DC Over\n[GS] $1,000,000" or "[GS] Spouse/DC Over\n$1,000,000"
+        # in the extracted text. Since there's only a single dollar figure,
+        # treating it as an exact amount instead of an open-ended floor is
+        # misleading — a real trade in this bracket could be tens of millions
+        # of dollars, not exactly $1,000,000.
+        over_pattern = re.compile(
+            r"\bOver\b\s*(?:\[.{1,4}\]\s*)?" + re.escape(dollar_amounts[0])
+        )
+        if over_pattern.search(block):
+            trade["amount"] = f"Over {dollar_amounts[0]}"
+        else:
+            trade["amount"] = dollar_amounts[0]
 
     # Extract transaction type: P (purchase), S (sale), S (partial), E (exchange)
     # It appears right before the first date
