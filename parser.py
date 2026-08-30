@@ -12,12 +12,22 @@ from bs4 import BeautifulSoup
 from config import PARSED_TRADES_FILE, DATA_DIR
 
 
+class FilingFetchError(Exception):
+    """
+    Raised when a filing could not be fetched/parsed due to a transient
+    problem (network error, bad status code, empty response, etc).
+    Callers should NOT mark a filing as "seen" when this is raised, so it
+    gets retried on the next run instead of being silently lost.
+    """
+
+
 def download_pdf(url):
     """Download a PDF and return it as a bytes buffer."""
     response = requests.get(url)
     if response.status_code != 200:
-        print(f"  Failed to download: {url} (status {response.status_code})")
-        return None
+        raise FilingFetchError(
+            f"Failed to download {url} (status {response.status_code})"
+        )
     return io.BytesIO(response.content)
 
 
@@ -285,13 +295,10 @@ def parse_filing(filing):
 def parse_house_filing(filing):
     """Parse a House PTR filing (PDF format)."""
     pdf_bytes = download_pdf(filing["pdf_url"])
-    if not pdf_bytes:
-        return []
 
     text = extract_text_from_pdf(pdf_bytes)
     if not text:
-        print(f"  No text extracted from PDF")
-        return []
+        raise FilingFetchError(f"No text extracted from PDF: {filing['pdf_url']}")
 
     name, state = extract_filer_info(text)
     raw_trades = parse_trades_from_text(text)
@@ -318,8 +325,9 @@ def parse_senate_filing(filing):
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
     })
     if response.status_code != 200:
-        print(f"  Failed to download Senate report: {url} (status {response.status_code})")
-        return []
+        raise FilingFetchError(
+            f"Failed to download Senate report: {url} (status {response.status_code})"
+        )
 
     raw_trades = parse_senate_html(response.text, filing)
 
@@ -339,13 +347,26 @@ def parse_all_filings(filings):
     """
     Parse a list of filings and return all trades found.
     Saves results to data/parsed_trades.json.
+
+    Returns a tuple (all_trades, successful_filing_ids). A filing's ID is
+    only included in successful_filing_ids if it was actually fetched and
+    parsed without error — callers should use that list (not the input
+    `filings`) to decide which filings are safe to mark as "seen", so that
+    a transient failure gets retried on the next run instead of being
+    permanently skipped.
     """
     print(f"Parsing {len(filings)} filing(s)...\n")
 
     all_trades = []
+    successful_filing_ids = []
     for filing in filings:
-        trades = parse_filing(filing)
+        try:
+            trades = parse_filing(filing)
+        except FilingFetchError as e:
+            print(f"  Skipping filing {filing.get('filing_id', '?')} — {e} (will retry next run)")
+            continue
         all_trades.extend(trades)
+        successful_filing_ids.append(filing["filing_id"])
 
     # Save to disk
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -354,7 +375,7 @@ def parse_all_filings(filings):
 
     print(f"\nTotal trades parsed: {len(all_trades)}")
     print(f"Saved to {PARSED_TRADES_FILE}")
-    return all_trades
+    return all_trades, successful_filing_ids
 
 
 # ─── RUN DIRECTLY FOR TESTING ───
@@ -381,7 +402,7 @@ if __name__ == "__main__":
         },
     ]
 
-    trades = parse_all_filings(test_filings)
+    trades, parsed_ids = parse_all_filings(test_filings)
 
     print("\n" + "=" * 60)
     print("PARSED TRADES")
