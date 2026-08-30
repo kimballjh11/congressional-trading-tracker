@@ -89,9 +89,14 @@ def parse_filings_html(html):
         if "PTR" not in filing_type:
             continue
 
-        # Extract the filing ID from the PDF path (e.g. 20033751 from ptr-pdfs/2026/20033751.pdf)
+        # Extract the filing ID from the PDF path (e.g. 20033751 from ptr-pdfs/2026/20033751.pdf).
+        # Filing IDs aren't always 8 digits — older/differently-numbered filings use 7 digits
+        # (e.g. 9115704.pdf, 8221321.pdf), so match any run of digits right before ".pdf" instead
+        # of hardcoding a fixed length. A fixed-length match silently falls back to using the
+        # entire pdf_path as the ID, producing a malformed filing_id like
+        # "house_public_disc/ptr-pdfs/2026/9115704.pdf" instead of "house_9115704".
         pdf_path = href[0]
-        filing_id_match = re.search(r"(\d{8})\.pdf", pdf_path)
+        filing_id_match = re.search(r"(\d+)\.pdf$", pdf_path)
         raw_id = filing_id_match.group(1) if filing_id_match else pdf_path
         filing_id = f"house_{raw_id}"
 
