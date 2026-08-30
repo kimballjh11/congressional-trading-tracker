@@ -14,6 +14,11 @@ ENRICHED_TRADES_FILE = os.path.join(DATA_DIR, "enriched_trades.json")
 SCORED_TRADES_FILE = os.path.join(DATA_DIR, "scored_trades.json")
 RUN_LOG_FILE = os.path.join(DATA_DIR, "run_log.txt")
 
+# Raw OCR text for scanned House PDFs that the structured trade parser
+# couldn't extract any trades from — saved so a human can manually review
+# filings that would otherwise be silently and permanently lost.
+OCR_UNPARSED_DIR = os.path.join(DATA_DIR, "ocr_unparsed")
+
 # ─── DATA SOURCES ───
 HOUSE_CLERK_URL = "https://disclosures-clerk.house.gov/FinancialDisclosure/ViewMemberSearchResult"
 HOUSE_MEMBER_XML = "https://clerk.house.gov/xml/lists/MemberData.xml"
