@@ -12,7 +12,7 @@ Members of Congress are required to disclose stock trades within 45 days. This t
 4. **Scores** each trade 0–100 on multiple suspicion signals
 5. **Emails** you a formatted report of flagged trades, grouped by severity
 
-No API keys needed — all data comes from public government sources.
+No API keys needed — all data comes from public government sources. (One signal, Legislation Timing, can optionally use a free congress.gov API key for richer results — see below.)
 
 ## Quick Start
 
@@ -83,7 +83,7 @@ Each trade is scored 0–100 based on 7 independent signals. Scores are capped a
 | **Disclosure Delay** | +8/+15 | Filed 30–37 days late (+8) or 38–45 days, near the legal limit (+15) |
 | **Cluster Trading** | +15/+20 | 2 members traded the same stock (+15) or 3+ members (+20) |
 | **Spouse/Dependent** | +10 | Trade made through spouse, dependent, or joint account |
-| **Legislation Timing** | +20 | Trade near a relevant committee hearing (placeholder — not yet implemented) |
+| **Legislation Timing** | +20 | Trade within 30 days of a relevant committee hearing (needs optional `CONGRESS_API_KEY`, see below) |
 | **Contrarian Buy** | +10 | Stock dropped >10% in 30 days before a purchase |
 
 ### Score Tags
@@ -96,6 +96,19 @@ Each trade is scored 0–100 based on 7 independent signals. Scores are capped a
 | 0–25 | Routine | Not shown in email |
 
 All thresholds and point values are configurable in `config.py`.
+
+### Legislation Timing Signal (Optional)
+
+The **Legislation Timing** signal checks whether a member's committee held a
+hearing or meeting within 30 days of their trade, in a subject area that
+matches the traded stock's sector. This requires a free API key from
+[api.congress.gov](https://api.congress.gov/sign-up/):
+
+1. Sign up for a key and add it to `.env` as `CONGRESS_API_KEY`
+2. That's it — the scorer automatically picks it up on the next run
+
+If `CONGRESS_API_KEY` is not set, this signal is skipped (scores 0) and every
+other part of the pipeline works exactly as before.
 
 ## Configuration
 
