@@ -18,11 +18,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      # actions/cache entries are immutable: a "hit" on the exact `key` skips
+      # saving entirely at the end of the job, so a static key (e.g. just
+      # "pipeline-data") would freeze data/seen_trades.json (and
+      # data/senate_scan_cursor.json, data/run_log.txt, etc.) at whatever the
+      # very first run wrote, forever. Every later run would restore that
+      # stale snapshot, re-detect the same filings as "new" since they were
+      # never actually marked seen in the persisted cache, and re-email
+      # duplicate reports that grow every day. Keying on the run id (which is
+      # always unique) guarantees a cache MISS on the primary key every time,
+      # so the job always saves its updated data/ at the end; `restore-keys`
+      # falls back to the most recent previous run's cache for the restore.
+      # See https://github.com/actions/cache/blob/main/tips-and-workarounds.md#update-a-cache
       - name: Restore pipeline data cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: data
-          key: pipeline-data
+          key: pipeline-data-${{ github.run_id }}
+          restore-keys: |
+            pipeline-data-
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -45,3 +59,16 @@ jobs:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: python main.py
+
+      # Save unconditionally (even if the pipeline step above failed) so that
+      # any filings/state successfully recorded this run (e.g. seen_trades.json
+      # updates from filings that were scraped before a later step failed)
+      # aren't lost. Uses the split restore/save actions (rather than the
+      # combined actions/cache@v4) specifically so this step always runs
+      # regardless of whether the restore above was a hit or a miss.
+      - name: Save pipeline data cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: pipeline-data-${{ github.run_id }}
