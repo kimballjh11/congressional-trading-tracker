@@ -20,6 +20,10 @@ HOUSE_MEMBER_XML = "https://clerk.house.gov/xml/lists/MemberData.xml"
 SENATE_EFDS_URL = "https://efdsearch.senate.gov"
 SENATE_ASSIGNMENTS_URL = "https://www.senate.gov/general/committee_assignments/assignments.htm"
 
+# Timeout (seconds) applied to all outbound HTTP requests so a slow/unresponsive
+# government site can't hang the pipeline indefinitely.
+REQUEST_TIMEOUT = 30
+
 # ─── SCORING THRESHOLDS ───
 # A trade's total score (0–100) determines its tag:
 SCORE_HIGH_ALERT = 76    # score >= 76 → "high_alert"
@@ -53,7 +57,7 @@ POINTS_LEGISLATION_TIMING = 20
 # Signal 7: Contrarian buy (stock dropped >10% before purchase)
 POINTS_CONTRARIAN_BUY = 10
 CONTRARIAN_DROP_THRESHOLD = -10  # percent change threshold
-CONTRARIAN_LOOKBACK_DAYS = 35    # days of price history to check
+CONTRARIAN_LOOKBACK_DAYS = 30    # days of price history to check (matches README / scoring docstring)
 
 # ─── COMMITTEE → SECTOR MAPPINGS ───
 # Maps committee name keywords to stock sectors they oversee.

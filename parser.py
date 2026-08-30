@@ -9,12 +9,16 @@ import os
 import io
 from bs4 import BeautifulSoup
 
-from config import PARSED_TRADES_FILE, DATA_DIR
+from config import PARSED_TRADES_FILE, DATA_DIR, REQUEST_TIMEOUT
 
 
 def download_pdf(url):
     """Download a PDF and return it as a bytes buffer."""
-    response = requests.get(url)
+    try:
+        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+    except requests.RequestException as e:
+        print(f"  Failed to download: {url} ({e})")
+        return None
     if response.status_code != 200:
         print(f"  Failed to download: {url} (status {response.status_code})")
         return None
@@ -24,11 +28,15 @@ def download_pdf(url):
 def extract_text_from_pdf(pdf_bytes):
     """Extract all text from a PDF, combining all pages."""
     text = ""
-    with pdfplumber.open(pdf_bytes) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+    try:
+        with pdfplumber.open(pdf_bytes) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+    except Exception as e:
+        print(f"  Failed to extract text from PDF: {e}")
+        return ""
     return text
 
 
@@ -314,9 +322,15 @@ def parse_senate_filing(filing):
     if not url:
         return []
 
-    response = requests.get(url, headers={
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    })
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as e:
+        print(f"  Failed to download Senate report: {url} ({e})")
+        return []
     if response.status_code != 200:
         print(f"  Failed to download Senate report: {url} (status {response.status_code})")
         return []
@@ -344,7 +358,11 @@ def parse_all_filings(filings):
 
     all_trades = []
     for filing in filings:
-        trades = parse_filing(filing)
+        try:
+            trades = parse_filing(filing)
+        except Exception as e:
+            print(f"  Failed to parse filing {filing.get('filing_id', '?')}: {e}")
+            continue
         all_trades.extend(trades)
 
     # Save to disk

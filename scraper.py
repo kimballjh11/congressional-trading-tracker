@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime
 
-from config import SEEN_TRADES_FILE, HOUSE_CLERK_URL, DATA_DIR
+from config import SEEN_TRADES_FILE, HOUSE_CLERK_URL, DATA_DIR, REQUEST_TIMEOUT
 
 
 def load_seen_trades():
@@ -19,7 +19,11 @@ def load_seen_trades():
     """
     if os.path.exists(SEEN_TRADES_FILE):
         with open(SEEN_TRADES_FILE, "r") as f:
-            return set(json.load(f))
+            try:
+                return set(json.load(f))
+            except (json.JSONDecodeError, ValueError):
+                print(f"  Warning: {SEEN_TRADES_FILE} is corrupt or unreadable; starting with an empty seen set.")
+                return set()
     return set()
 
 
@@ -51,7 +55,11 @@ def fetch_house_filings(year=None):
         "toDate": "",
     }
 
-    response = requests.post(HOUSE_CLERK_URL, data=data)
+    try:
+        response = requests.post(HOUSE_CLERK_URL, data=data, timeout=REQUEST_TIMEOUT)
+    except requests.RequestException as e:
+        print(f"Error fetching data: {e}")
+        return []
 
     if response.status_code != 200:
         print(f"Error fetching data: status code {response.status_code}")

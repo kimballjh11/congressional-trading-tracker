@@ -4,6 +4,7 @@
 import smtplib
 import json
 import os
+import html
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
@@ -45,14 +46,19 @@ def compute_disclosure_delay(trade):
 
 def build_trade_row(trade):
     """Build an HTML table row for a single trade."""
-    ticker = trade.get("ticker", "")
+    ticker = html.escape(trade.get("ticker", ""))
     ticker_display = f"<strong>{ticker}</strong>" if ticker else "—"
     tx_type = trade.get("transaction_type", "N/A")
-    committees = ", ".join(trade.get("committees", [])) or "—"
+    committees = html.escape(", ".join(trade.get("committees", []))) or "—"
     delay = compute_disclosure_delay(trade)
     score = trade.get("score", 0)
-    reason = trade.get("reason", "")
+    reason = html.escape(trade.get("reason", ""))
     pdf_url = trade.get("pdf_url", "")
+    pdf_url_escaped = html.escape(pdf_url, quote=True) if pdf_url.startswith(("http://", "https://")) else ""
+    representative = html.escape(trade.get("representative", "Unknown"))
+    asset = html.escape(trade.get("asset", "N/A"))
+    amount = html.escape(trade.get("amount", "N/A"))
+    transaction_date = html.escape(trade.get("transaction_date", "N/A"))
 
     if "Purchase" in tx_type:
         type_color = "#22863a"
@@ -67,19 +73,19 @@ def build_trade_row(trade):
     return f"""
     <tr style="border-bottom: 1px solid #e2e8f0;">
         <td style="padding: 10px 8px; vertical-align: top;">
-            <strong>{trade.get('representative', 'Unknown')}</strong><br>
+            <strong>{representative}</strong><br>
             <span style="color: #666; font-size: 12px;">{committees}</span>
         </td>
         <td style="padding: 10px 8px; vertical-align: top;">
-            {trade.get('asset', 'N/A')}<br>
+            {asset}<br>
             <span style="font-size: 13px;">Ticker: {ticker_display}</span>
         </td>
         <td style="padding: 10px 8px; vertical-align: top; color: {type_color}; font-weight: bold;">
             {type_label}
         </td>
-        <td style="padding: 10px 8px; vertical-align: top;">{trade.get('amount', 'N/A')}</td>
+        <td style="padding: 10px 8px; vertical-align: top;">{amount}</td>
         <td style="padding: 10px 8px; vertical-align: top;">
-            {trade.get('transaction_date', 'N/A')}<br>
+            {transaction_date}<br>
             <span style="color: #888; font-size: 12px;">{delay} day delay</span>
         </td>
         <td style="padding: 10px 8px; vertical-align: top; text-align: center;">
@@ -89,7 +95,7 @@ def build_trade_row(trade):
     <tr style="border-bottom: 2px solid #e2e8f0;">
         <td colspan="6" style="padding: 4px 8px 12px 8px;">
             <span style="font-size: 12px; color: #555;">{reason}</span>
-            {f'<br><a href="{pdf_url}" style="font-size: 12px; color: #2563eb;">View original PDF</a>' if pdf_url else ''}
+            {f'<br><a href="{pdf_url_escaped}" style="font-size: 12px; color: #2563eb;">View original PDF</a>' if pdf_url_escaped else ''}
         </td>
     </tr>"""
 
@@ -139,7 +145,6 @@ def build_report_body(scored_trades, total_filings):
 
     # Count flagged (above routine)
     flagged = sum(len(v) for v in tier_buckets.values())
-    routine_count += len(scored_trades) - flagged
 
     # If nothing noteworthy, send the short version
     if flagged == 0:
