@@ -120,10 +120,15 @@ def parse_single_trade(block):
     if desc_match:
         trade["description"] = desc_match.group(1).strip()
 
-    # Extract ticker symbol from parentheses, e.g., (FERG), (NFLX), (STT)
+    # Extract ticker symbol from parentheses, e.g., (FERG), (NFLX), (STT).
+    # Some closed-end/mutual funds render their ticker as "(Ticker: CCLFX)"
+    # instead of the usual bare "(CCLFX)" — fall back to that form if the
+    # bare-symbol pattern doesn't match.
     ticker_match = re.search(r"\(([A-Z]{1,5})\)", block)
+    if not ticker_match:
+        ticker_match = re.search(r"\(Ticker:\s*([A-Za-z0-9]+)\)", block, re.IGNORECASE)
     if ticker_match:
-        trade["ticker"] = ticker_match.group(1)
+        trade["ticker"] = ticker_match.group(1).upper()
 
     # Extract dates (MM/DD/YYYY format)
     dates = re.findall(r"\d{2}/\d{2}/\d{4}", block)
