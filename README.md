@@ -80,7 +80,7 @@ Each trade is scored 0–100 based on 7 independent signals. Scores are capped a
 | **Committee/Sector Match** | +25 | Member sits on a committee that oversees the stock's sector |
 | **Ways & Means** | +10 | Ways & Means committee (affects all sectors via tax policy) |
 | **Large Trade** | +10/+15 | Trade amount >$50K (+10) or >$100K (+15) |
-| **Disclosure Delay** | +8/+15 | Filed 30–37 days late (+8) or 38–45 days, near the legal limit (+15) |
+| **Disclosure Delay** | +8/+15/+20 | Filed 30–37 days late (+8), 38–45 days near the legal limit (+15), or >45 days — a confirmed STOCK Act violation (+20) |
 | **Cluster Trading** | +15/+20 | 2 members traded the same stock (+15) or 3+ members (+20) |
 | **Spouse/Dependent** | +10 | Trade made through spouse, dependent, or joint account |
 | **Legislation Timing** | +20 | Trade near a relevant committee hearing (placeholder — not yet implemented) |

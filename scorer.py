@@ -17,7 +17,7 @@ from config import (
     SCORE_HIGH_ALERT, SCORE_SUSPICIOUS, SCORE_NOTEWORTHY,
     POINTS_COMMITTEE_MATCH, POINTS_WAYS_AND_MEANS,
     POINTS_LARGE_TRADE_100K, POINTS_LARGE_TRADE_50K,
-    POINTS_DELAY_NEAR_LIMIT, POINTS_DELAY_LATE,
+    POINTS_DELAY_VIOLATION, POINTS_DELAY_NEAR_LIMIT, POINTS_DELAY_LATE,
     POINTS_CLUSTER_3_PLUS, POINTS_CLUSTER_2,
     POINTS_SPOUSE_DEPENDENT, POINTS_CONTRARIAN_BUY,
     CONTRARIAN_DROP_THRESHOLD, CONTRARIAN_LOOKBACK_DAYS,
@@ -88,7 +88,11 @@ def parse_date(date_str):
 
 
 def score_disclosure_delay(trade):
-    """+15 if disclosure delay is 38–45 days, +8 if 30–37 days."""
+    """
+    +20 if disclosure delay is >45 days (a confirmed STOCK Act violation —
+    past the legal disclosure deadline), +15 if 38–45 days (near the
+    deadline), +8 if 30–37 days.
+    """
     tx_date = parse_date(trade.get("transaction_date", ""))
     disc_date = parse_date(trade.get("notification_date", ""))
     if not tx_date or not disc_date:
@@ -98,6 +102,8 @@ def score_disclosure_delay(trade):
     if delay < 0:
         return 0, ""
 
+    if delay > 45:
+        return POINTS_DELAY_VIOLATION, f"Disclosure delay: {delay} days (STOCK Act violation — past the 45-day deadline, +{POINTS_DELAY_VIOLATION})"
     if 38 <= delay <= 45:
         return POINTS_DELAY_NEAR_LIMIT, f"Disclosure delay: {delay} days (near 45-day limit, +{POINTS_DELAY_NEAR_LIMIT})"
     if 30 <= delay <= 37:
