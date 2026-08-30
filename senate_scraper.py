@@ -137,9 +137,19 @@ def search_ptr_filings(session, start_date=None, end_date=None):
         if filing:
             filings.append(filing)
 
+    # Track how many rows we've actually asked the server for, separately
+    # from how many turned into a `filing` dict. `parse_search_row` can
+    # return None for a row (e.g. malformed row, or a report type that
+    # slips past the server-side filter), so `len(filings)` can be less
+    # than the number of rows already consumed. Using `len(filings)` as
+    # the next "start" offset would then re-request rows we've already
+    # seen instead of advancing, which can miss/duplicate filings the
+    # further into a large result set (>100 rows) the search gets.
+    rows_fetched = len(result.get("data", []))
+
     # If there are more results, paginate
-    while len(filings) < total:
-        data["start"] = str(len(filings))
+    while rows_fetched < total:
+        data["start"] = str(rows_fetched)
         data["draw"] = str(int(data["draw"]) + 1)
 
         resp = session.post(
@@ -165,6 +175,7 @@ def search_ptr_filings(session, start_date=None, end_date=None):
         if not new_rows:
             break
 
+        rows_fetched += len(new_rows)
         for row in new_rows:
             filing = parse_search_row(row)
             if filing:
