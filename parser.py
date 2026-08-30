@@ -120,8 +120,10 @@ def parse_single_trade(block):
     if desc_match:
         trade["description"] = desc_match.group(1).strip()
 
-    # Extract ticker symbol from parentheses, e.g., (FERG), (NFLX), (STT)
-    ticker_match = re.search(r"\(([A-Z]{1,5})\)", block)
+    # Extract ticker symbol from parentheses, e.g., (FERG), (NFLX), (STT).
+    # Some tickers include a class-share suffix like (BRK.B) or (BF.B) —
+    # the dot form is what the House PDFs actually render.
+    ticker_match = re.search(r"\(([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\)", block)
     if ticker_match:
         trade["ticker"] = ticker_match.group(1)
 

@@ -166,6 +166,16 @@ def find_committees_for_member(house_comms, senate_comms, representative, state_
 
 # ─── STOCK DATA LOOKUP ───
 
+def to_yfinance_symbol(ticker):
+    """
+    Convert a ticker as it appears in a PTR filing to the symbol yfinance expects.
+    Class shares are filed with a dot (e.g. "BRK.B", "BF.B"), but yfinance only
+    recognizes the hyphenated form (e.g. "BRK-B") — a bare dot lookup returns
+    no data at all, silently. See enricher.py's fetch_stock_info() usage.
+    """
+    return ticker.replace(".", "-") if ticker else ticker
+
+
 def fetch_stock_info(ticker):
     """
     Use yfinance to get current price, sector, and industry for a ticker.
@@ -175,7 +185,7 @@ def fetch_stock_info(ticker):
         return {"current_price": None, "sector": "", "industry": ""}
 
     try:
-        t = yf.Ticker(ticker)
+        t = yf.Ticker(to_yfinance_symbol(ticker))
         info = t.info
         return {
             "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
