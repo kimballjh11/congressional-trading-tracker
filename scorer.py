@@ -14,6 +14,7 @@ except ImportError:
 
 from config import (
     ENRICHED_TRADES_FILE, SCORED_TRADES_FILE, DATA_DIR,
+    CLUSTER_HISTORY_FILE, CLUSTER_LOOKBACK_DAYS,
     SCORE_HIGH_ALERT, SCORE_SUSPICIOUS, SCORE_NOTEWORTHY,
     POINTS_COMMITTEE_MATCH, POINTS_WAYS_AND_MEANS,
     POINTS_LARGE_TRADE_100K, POINTS_LARGE_TRADE_50K,
@@ -108,17 +109,84 @@ def score_disclosure_delay(trade):
 
 # ─── SIGNAL 4: MULTIPLE MEMBERS TRADING SAME STOCK ───
 
+def load_cluster_history():
+    """Load previously-recorded (ticker, member, date) trade entries."""
+    if not os.path.exists(CLUSTER_HISTORY_FILE):
+        return []
+    with open(CLUSTER_HISTORY_FILE, "r") as f:
+        try:
+            return json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            return []
+
+
+def save_cluster_history(records):
+    """Persist the (pruned, deduped) cluster-history records to disk."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(CLUSTER_HISTORY_FILE, "w") as f:
+        json.dump(records, f, indent=2)
+
+
+def _cluster_record_key(record):
+    """Uniquely identifies a trade record for cluster-history dedup."""
+    return (
+        record.get("filing_id", ""),
+        record.get("ticker", ""),
+        record.get("representative", ""),
+        record.get("transaction_date", ""),
+    )
+
+
 def score_cluster_trades(trades):
     """
     +20 if 3+ different members traded the same ticker.
     +15 if 2 different members traded the same ticker.
     Returns a dict: ticker → (points, list of member names).
+
+    Each pipeline run only scores the filings scraped that run, but real
+    congressional PTR filings for the same underlying trade event routinely
+    land on different days — disclosure delays vary member to member (up
+    to the 45-day STOCK Act limit). Without cross-run memory, two members
+    who trade the same stock around the same time would only ever be
+    flagged as a "cluster" if their filings happened to be scraped on the
+    exact same day, which is rare. To fix this, cluster detection also
+    considers trades recorded by previous runs within CLUSTER_LOOKBACK_DAYS,
+    persisted to CLUSTER_HISTORY_FILE.
     """
-    ticker_members = defaultdict(set)
+    history = load_cluster_history()
+    cutoff = datetime.now() - timedelta(days=CLUSTER_LOOKBACK_DAYS)
+
+    # Prune history entries older than the lookback window.
+    fresh_history = [
+        record for record in history
+        if (parse_date(record.get("transaction_date", "")) or cutoff) >= cutoff
+    ]
+
+    # Merge in this run's trades, deduping so re-running against the same
+    # trades (e.g. local testing) doesn't inflate the member count.
+    seen_keys = {_cluster_record_key(r) for r in fresh_history}
+    combined = list(fresh_history)
     for trade in trades:
         ticker = trade.get("ticker", "")
-        if ticker:
-            ticker_members[ticker].add(trade.get("representative", ""))
+        representative = trade.get("representative", "")
+        if not ticker or not representative:
+            continue
+        record = {
+            "filing_id": trade.get("filing_id", ""),
+            "ticker": ticker,
+            "representative": representative,
+            "transaction_date": trade.get("transaction_date", ""),
+        }
+        key = _cluster_record_key(record)
+        if key not in seen_keys:
+            combined.append(record)
+            seen_keys.add(key)
+
+    save_cluster_history(combined)
+
+    ticker_members = defaultdict(set)
+    for record in combined:
+        ticker_members[record["ticker"]].add(record["representative"])
 
     results = {}
     for ticker, members in ticker_members.items():
