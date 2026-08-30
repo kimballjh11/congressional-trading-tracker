@@ -72,7 +72,16 @@ def setup_venv():
         print(f"Virtual environment already exists at {VENV_DIR}")
     else:
         print("Creating virtual environment...")
-        subprocess.run([sys.executable, "-m", "venv", VENV_DIR], check=True)
+        try:
+            subprocess.run([sys.executable, "-m", "venv", VENV_DIR], check=True)
+        except subprocess.CalledProcessError:
+            print("\nERROR: Failed to create the virtual environment.")
+            print("This usually means Python's 'venv' module isn't fully installed.")
+            if platform.system() == "Linux":
+                pkg = f"python{sys.version_info.major}.{sys.version_info.minor}-venv"
+                print("On Debian/Ubuntu, install it with:")
+                print(f"  sudo apt install {pkg}")
+            sys.exit(1)
         print("Virtual environment created.")
 
     # Determine pip path
@@ -84,7 +93,13 @@ def setup_venv():
         python = os.path.join(VENV_DIR, "bin", "python")
 
     print("\nInstalling dependencies from requirements.txt...")
-    subprocess.run([pip, "install", "-r", REQUIREMENTS], check=True)
+    try:
+        subprocess.run([pip, "install", "-r", REQUIREMENTS], check=True)
+    except subprocess.CalledProcessError:
+        print("\nERROR: Failed to install dependencies from requirements.txt.")
+        print("Check your internet connection, then try installing manually with:")
+        print(f"  {pip} install -r {REQUIREMENTS}")
+        sys.exit(1)
     print("\nAll dependencies installed.")
 
     return python
@@ -221,7 +236,14 @@ def setup_macos_launchagent(python_path):
     with open(plist_path, "w") as f:
         f.write(plist_content)
 
-    subprocess.run(["launchctl", "load", plist_path], check=True)
+    try:
+        subprocess.run(["launchctl", "load", plist_path], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"\nERROR: Failed to load the LaunchAgent: {e}")
+        print(f"The plist was written to {plist_path}.")
+        print(f"Try loading it manually with:")
+        print(f"  launchctl load {plist_path}")
+        return
 
     print(f"LaunchAgent installed at:")
     print(f"  {plist_path}")
