@@ -173,6 +173,14 @@ def parse_single_trade(block):
         asset_section = re.sub(r"\s+", " ", asset_section).strip()
         trade["asset"] = asset_section
 
+    # A block that yielded no asset, ticker, or transaction type isn't a real
+    # trade — it's likely leftover boilerplate/footnote text that slipped
+    # past the header/footer split. Drop it instead of returning an
+    # all-empty-but-truthy dict that would otherwise flow through the rest
+    # of the pipeline as a phantom trade.
+    if not (trade["asset"] or trade["ticker"] or trade["transaction_type"]):
+        return None
+
     return trade
 
 

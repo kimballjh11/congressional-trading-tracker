@@ -9,7 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from dotenv import load_dotenv
 
-from config import SCORED_TRADES_FILE, EMAIL_TIERS, SMTP_SERVER, SMTP_PORT
+from config import SCORED_TRADES_FILE, EMAIL_TIERS, SMTP_SERVER, SMTP_PORT, SCORE_NOTEWORTHY
 
 load_dotenv()
 
@@ -152,7 +152,7 @@ def build_report_body(scored_trades, total_filings):
             <p style="font-size: 16px; color: #333;">No noteworthy trades today.</p>
             <p style="color: #888; font-size: 13px;">
                 Scanned {total_filings} filing(s), {len(scored_trades)} trade(s) extracted.
-                All scored 25 or below (routine).
+                All scored below {SCORE_NOTEWORTHY} (routine).
             </p>
             <p style="color: #aaa; font-size: 11px; margin-top: 24px;">
                 Source: disclosures-clerk.house.gov
