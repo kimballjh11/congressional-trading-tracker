@@ -239,12 +239,20 @@ def setup_linux_cron(python_path):
     # Check if already installed
     result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
     existing = result.stdout if result.returncode == 0 else ""
+    existing_lines = existing.splitlines()
 
-    if "run_on_wake.py" in existing:
+    if cron_line in existing_lines:
         print("Cron job already installed.")
         return
 
-    new_crontab = existing.rstrip("\n") + "\n" + cron_line + "\n"
+    # Drop any stale entry from a previous install at a different path
+    # (e.g. the project directory was moved or re-cloned elsewhere) before
+    # adding the current one. Otherwise a leftover line pointing at the old
+    # path would keep matching a substring check forever, so the pipeline
+    # would never actually get (re-)scheduled at the new location.
+    filtered_lines = [line for line in existing_lines if "run_on_wake.py" not in line]
+
+    new_crontab = "\n".join(filtered_lines + [cron_line]) + "\n"
     process = subprocess.run(["crontab", "-"], input=new_crontab, text=True,
                               capture_output=True)
 
