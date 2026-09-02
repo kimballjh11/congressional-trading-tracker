@@ -35,10 +35,16 @@ OS="$(uname -s)"
 if [[ "$OS" == "Linux" ]]; then
   CRON_LINE="0 8 * * * cd $PROJECT_DIR && $PY $PROJECT_DIR/run_on_wake.py >> $DATA_DIR/cron.log 2>&1"
   EXISTING="$(crontab -l 2>/dev/null || true)"
-  if echo "$EXISTING" | grep -q "run_on_wake.py"; then
+  if echo "$EXISTING" | grep -qxF "$CRON_LINE"; then
     echo "==> Cron job already installed"
   else
-    printf '%s\n%s\n' "$EXISTING" "$CRON_LINE" | crontab -
+    # Drop any stale entry from a previous install at a different path
+    # (e.g. the project directory was moved or re-cloned elsewhere) before
+    # adding the current one. Otherwise a leftover line pointing at the old
+    # path silently satisfies the "already installed" check above forever,
+    # so the pipeline never actually gets scheduled at the new location.
+    FILTERED="$(echo "$EXISTING" | grep -v "run_on_wake.py" || true)"
+    printf '%s\n%s\n' "$FILTERED" "$CRON_LINE" | crontab -
     echo "==> Cron job installed (daily at 8:00 AM)"
   fi
 elif [[ "$OS" == "Darwin" ]]; then
