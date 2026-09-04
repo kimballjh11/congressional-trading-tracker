@@ -31,8 +31,15 @@ def run():
     error_occurred = False
 
     def finish():
-        if not email_sent and os.getenv("GITHUB_ACTIONS"):
+        if not os.getenv("GITHUB_ACTIONS"):
+            return
+        if not email_sent:
             print("ERROR: Email was not sent. Failing CI run.")
+            raise SystemExit(1)
+        if error_occurred:
+            print("ERROR: A pipeline step failed (see log above) even though "
+                  "an email was still sent. Failing CI run so the failure "
+                  "doesn't go unnoticed.")
             raise SystemExit(1)
 
     try:
