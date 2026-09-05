@@ -39,9 +39,25 @@ def print_step(n, text):
     print(f"\n--- Step {n}: {text} ---\n")
 
 
+def safe_input(prompt):
+    """
+    Wrap input() so a closed/non-interactive stdin (EOFError) or a
+    Ctrl-C (KeyboardInterrupt) doesn't crash the whole script with a
+    raw traceback. Returns "" if no input could be read.
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        print("\nNo input available (stdin is not interactive). Using default.")
+        return ""
+    except KeyboardInterrupt:
+        print("\nSetup cancelled.")
+        sys.exit(1)
+
+
 def ask_yes_no(prompt, default="y"):
     suffix = "[Y/n]" if default == "y" else "[y/N]"
-    answer = input(f"{prompt} {suffix} ").strip().lower()
+    answer = safe_input(f"{prompt} {suffix} ").strip().lower()
     if not answer:
         return default == "y"
     return answer in ("y", "yes")
@@ -110,13 +126,13 @@ def setup_env():
     print("  4. Create a new App Password for 'Mail'")
     print("  5. Copy the 16-character password\n")
 
-    email = input("Your Gmail address: ").strip()
+    email = safe_input("Your Gmail address: ").strip()
     if not email:
         print("Skipping — you can set this later in the .env file.")
         shutil.copy(os.path.join(PROJECT_DIR, ".env.example"), ENV_FILE)
         return
 
-    app_password = input("Your Gmail App Password: ").strip()
+    app_password = safe_input("Your Gmail App Password: ").strip()
     if not app_password:
         print("Skipping — you can set this later in the .env file.")
         shutil.copy(os.path.join(PROJECT_DIR, ".env.example"), ENV_FILE)
