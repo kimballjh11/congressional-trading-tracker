@@ -17,20 +17,33 @@ from config import RUN_LOG_FILE
 
 
 def get_last_run_date():
-    """Read the run log and find the date of the last pipeline run."""
+    """Read the run log and find the date of the last pipeline run that
+    actually ran to completion (logged a SUCCESS or PARTIAL result).
+
+    A run that only logged "Pipeline started" — because the process was
+    killed, the machine slept/lost power, or an unhandled crash occurred —
+    does NOT count. Otherwise a crashed run with no email ever sent would
+    still block every retry (cron or manual) for the rest of the day.
+    """
     if not os.path.exists(RUN_LOG_FILE):
         return None
 
     with open(RUN_LOG_FILE, "r") as f:
         lines = f.readlines()
 
-    # Look for the most recent "Pipeline started" entry
-    for line in reversed(lines):
+    pending_start_date = None
+    last_completed_date = None
+    for line in lines:
         match = re.match(r"\[(\d{4}-\d{2}-\d{2})", line)
-        if match and "Pipeline started" in line:
-            return match.group(1)
+        if not match:
+            continue
+        if "Pipeline started" in line:
+            pending_start_date = match.group(1)
+        elif pending_start_date and re.search(r"Pipeline (SUCCESS|PARTIAL)\b", line):
+            last_completed_date = pending_start_date
+            pending_start_date = None
 
-    return None
+    return last_completed_date
 
 
 def already_ran_today():
