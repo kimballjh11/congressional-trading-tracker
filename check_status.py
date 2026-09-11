@@ -9,16 +9,31 @@ from config import RUN_LOG_FILE
 
 
 def parse_run_dates():
-    """Extract all dates where the pipeline started from the run log."""
+    """Extract all dates where the pipeline actually ran to completion
+    (logged a SUCCESS or PARTIAL result) from the run log.
+
+    A run that only logged "Pipeline started" -- because the process was
+    killed, the machine slept/lost power, or an unhandled crash occurred --
+    does NOT count. Otherwise a crashed run with no email ever sent would
+    still show up as a healthy day in the "Last run" / "Consecutive days" /
+    "Missed (last 7d)" checks below, masking the exact kind of failure this
+    health check exists to catch.
+    """
     if not os.path.exists(RUN_LOG_FILE):
         return []
 
     dates = set()
+    pending_start_date = None
     with open(RUN_LOG_FILE, "r") as f:
         for line in f:
             match = re.match(r"\[(\d{4}-\d{2}-\d{2})", line)
-            if match and "Pipeline started" in line:
-                dates.add(match.group(1))
+            if not match:
+                continue
+            if "Pipeline started" in line:
+                pending_start_date = match.group(1)
+            elif pending_start_date and re.search(r"Pipeline (SUCCESS|PARTIAL)\b", line):
+                dates.add(pending_start_date)
+                pending_start_date = None
 
     return sorted(dates)
 
