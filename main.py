@@ -108,25 +108,36 @@ def run():
         return
 
     # ─── STEP 3: ENRICH ───
+    enrich_succeeded = False
     try:
         print("\n" + "=" * 60)
         print("STEP 3: Enriching with committee and stock data")
         print("=" * 60)
         enrich_trades()
+        enrich_succeeded = True
     except Exception as e:
         log(f"ERROR in enricher: {e}")
         error_occurred = True
 
     # ─── STEP 4: SCORE ───
+    # Only score if enrichment actually completed this run. enrich_trades()
+    # only overwrites ENRICHED_TRADES_FILE at the very end, after processing
+    # every trade — if it raised partway through, that file still holds
+    # whatever a *previous* successful run wrote. Scoring it here would
+    # silently re-flag and re-email already-reported trades while today's
+    # newly parsed trades are never enriched, scored, or emailed.
     scored = []
-    try:
-        print("\n" + "=" * 60)
-        print("STEP 4: Scoring trades for suspicion")
-        print("=" * 60)
-        scored = score_trades()
-    except Exception as e:
-        log(f"ERROR in scorer: {e}")
-        error_occurred = True
+    if enrich_succeeded:
+        try:
+            print("\n" + "=" * 60)
+            print("STEP 4: Scoring trades for suspicion")
+            print("=" * 60)
+            scored = score_trades()
+        except Exception as e:
+            log(f"ERROR in scorer: {e}")
+            error_occurred = True
+    else:
+        log("Skipping scoring — enrichment failed, avoiding re-processing stale enriched data")
 
     trades_flagged = sum(1 for t in scored if t.get("score", 0) > 25)
 
