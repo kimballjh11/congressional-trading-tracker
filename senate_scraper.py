@@ -10,10 +10,10 @@
 import requests
 import re
 import json
-import os
 from datetime import datetime, timedelta
 
-from config import SEEN_TRADES_FILE, SENATE_EFDS_URL, DATA_DIR
+from config import SENATE_EFDS_URL
+from seen_store import load_seen_trades
 
 BASE_URL = SENATE_EFDS_URL
 REPORT_TYPE_PTR = "11"  # Senate report type code for Periodic Transaction Reports
@@ -231,25 +231,16 @@ def strip_html(text):
     return re.sub(r"<[^>]+>", "", text) if text else ""
 
 
-def load_seen_trades():
-    """Load seen filing IDs, returns a set."""
-    if os.path.exists(SEEN_TRADES_FILE):
-        with open(SEEN_TRADES_FILE, "r") as f:
-            return set(json.load(f))
-    return set()
-
-
-def save_seen_trades(seen):
-    """Save seen filing IDs."""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(SEEN_TRADES_FILE, "w") as f:
-        json.dump(list(seen), f)
-
-
 def get_new_senate_trades():
     """
     MAIN FUNCTION — Fetch new Senate PTR filings.
     Returns a list of new filing dicts.
+
+    NOTE: this does NOT mark filings as seen. A filing is only recorded as
+    seen once it has actually been fetched and parsed successfully (see
+    parser.parse_all_filings / seen_store.mark_seen, called from main.py),
+    so a download/parse failure doesn't permanently lose it — it's simply
+    returned again as "new" on the next run instead.
     """
     seen = load_seen_trades()
     senate_seen = {s for s in seen if s.startswith("senate_")}
@@ -262,13 +253,7 @@ def get_new_senate_trades():
 
     filings = search_ptr_filings(session)
 
-    new_filings = []
-    for filing in filings:
-        if filing["filing_id"] not in seen:
-            new_filings.append(filing)
-            seen.add(filing["filing_id"])
-
-    save_seen_trades(seen)
+    new_filings = [f for f in filings if f["filing_id"] not in seen]
 
     print(f"New Senate filings found: {len(new_filings)}")
     return new_filings

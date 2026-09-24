@@ -10,6 +10,7 @@ from parser import parse_all_filings
 from enricher import enrich_trades
 from scorer import score_trades
 from emailer import send_report
+from seen_store import mark_seen
 
 
 def log(message):
@@ -81,14 +82,26 @@ def run():
 
     # ─── STEP 2: PARSE ───
     trades = []
+    parsed_filing_ids = []
     try:
         print("\n" + "=" * 60)
         print("STEP 2: Parsing trade details from filings")
         print("=" * 60)
-        trades = parse_all_filings(all_filings)
+        trades, parsed_filing_ids = parse_all_filings(all_filings)
     except Exception as e:
         log(f"ERROR in parser: {e}")
         error_occurred = True
+
+    # Only mark filings as "seen" once they've actually been fetched and
+    # parsed successfully — this must happen even if `trades` ends up
+    # empty (and even though we may return early right below), so a
+    # filing that failed to download/parse (network blip, bad status,
+    # etc.) is retried on the next run instead of being silently and
+    # permanently lost.
+    skipped = filings_count - len(parsed_filing_ids)
+    if skipped > 0:
+        log(f"{skipped} filing(s) failed to parse and will be retried next run")
+    mark_seen(parsed_filing_ids)
 
     if not trades:
         try:
