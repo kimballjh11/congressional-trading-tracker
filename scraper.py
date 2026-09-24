@@ -5,31 +5,10 @@
 
 import requests
 import re
-import json
-import os
 from datetime import datetime
 
-from config import SEEN_TRADES_FILE, HOUSE_CLERK_URL, DATA_DIR
-
-
-def load_seen_trades():
-    """
-    Load the set of filing IDs we've already processed.
-    If the file doesn't exist yet (first run), return an empty set.
-    """
-    if os.path.exists(SEEN_TRADES_FILE):
-        with open(SEEN_TRADES_FILE, "r") as f:
-            return set(json.load(f))
-    return set()
-
-
-def save_seen_trades(seen):
-    """
-    Save the updated set of seen filing IDs to disk.
-    """
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(SEEN_TRADES_FILE, "w") as f:
-        json.dump(list(seen), f)
+from config import HOUSE_CLERK_URL
+from seen_store import load_seen_trades
 
 
 def fetch_house_filings(year=None):
@@ -119,7 +98,12 @@ def get_new_trades():
     1. Fetch all PTR filings from the House Clerk
     2. Compare against what we've already seen
     3. Return only the new ones
-    4. Save updated seen list
+
+    NOTE: this does NOT mark filings as seen. A filing is only recorded as
+    seen once it has actually been fetched and parsed successfully (see
+    parser.parse_all_filings / seen_store.mark_seen, called from main.py),
+    so a download/parse failure doesn't permanently lose it — it's simply
+    returned again as "new" on the next run instead.
     """
     seen = load_seen_trades()
     print(f"Previously seen filings: {len(seen)}")
@@ -128,13 +112,7 @@ def get_new_trades():
     if not filings:
         return []
 
-    new_filings = []
-    for filing in filings:
-        if filing["filing_id"] not in seen:
-            new_filings.append(filing)
-            seen.add(filing["filing_id"])
-
-    save_seen_trades(seen)
+    new_filings = [f for f in filings if f["filing_id"] not in seen]
 
     print(f"New filings found: {len(new_filings)}")
     return new_filings
