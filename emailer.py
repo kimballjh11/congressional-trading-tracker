@@ -1,6 +1,7 @@
 # emailer.py — Send a polished HTML report of scored congressional trades
 # Uses Gmail SMTP with an App Password (stored in .env).
 
+import html
 import smtplib
 import json
 import os
@@ -41,6 +42,29 @@ def compute_disclosure_delay(trade):
         except ValueError:
             continue
     return "—"
+
+
+def build_error_banner(errors):
+    """
+    Build a visible warning banner listing pipeline step failures.
+    Without this, a step that crashed (e.g. scraper/parser raising an
+    exception) looks identical in the email to a genuinely quiet day with
+    nothing new to report — the run log shows "PARTIAL" but the person
+    reading their inbox has no way to know anything went wrong.
+    """
+    if not errors:
+        return ""
+    items = "".join(f"<li>{html.escape(str(e))}</li>" for e in errors)
+    return f"""
+    <div style="background-color: #fef2f2; border: 1px solid #fca5a5; border-radius: 4px; padding: 12px 14px; margin-bottom: 20px;">
+        <strong style="color: #dc2626;">&#9888; Pipeline error{'s' if len(errors) != 1 else ''} occurred during this run</strong>
+        <p style="color: #7f1d1d; font-size: 12px; margin: 6px 0 4px 0;">
+            The results below may be incomplete — one or more steps failed before finishing:
+        </p>
+        <ul style="margin: 0; padding-left: 20px; color: #7f1d1d; font-size: 12px;">
+            {items}
+        </ul>
+    </div>"""
 
 
 def build_trade_row(trade):
@@ -123,9 +147,11 @@ def build_tier_section(tier_tag, tier_label, tier_color, tier_bg, trades):
     </div>"""
 
 
-def build_report_body(scored_trades, total_filings):
+def build_report_body(scored_trades, total_filings, errors=None):
     """Build the full HTML email report from scored trades."""
+    errors = errors or []
     date_str = datetime.now().strftime("%B %d, %Y")
+    error_banner = build_error_banner(errors)
 
     # Split trades into tiers
     tier_buckets = {tag: [] for tag, _, _, _ in TIERS}
@@ -143,16 +169,28 @@ def build_report_body(scored_trades, total_filings):
 
     # If nothing noteworthy, send the short version
     if flagged == 0:
+        if errors and not scored_trades:
+            # A step crashed before anything could be scored — don't claim
+            # "all scored 25 or below" when scoring never actually happened.
+            summary_line = (
+                f"Scanned {total_filings} filing(s), but no trades could be scored "
+                "this run due to the error(s) above."
+            )
+        else:
+            summary_line = (
+                f"Scanned {total_filings} filing(s), {len(scored_trades)} trade(s) extracted.<br>"
+                "All scored 25 or below (routine)."
+            )
         return f"""
         <html>
         <body style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 16px;">
             <h2 style="color: #1a365d;">Congressional Trade Alert</h2>
             <p style="color: #555;">{date_str}</p>
             <hr style="border: none; border-top: 2px solid #1a365d; margin-bottom: 20px;">
+            {error_banner}
             <p style="font-size: 16px; color: #333;">No noteworthy trades today.</p>
             <p style="color: #888; font-size: 13px;">
-                Scanned {total_filings} filing(s), {len(scored_trades)} trade(s) extracted.
-                All scored 25 or below (routine).
+                {summary_line}
             </p>
             <p style="color: #aaa; font-size: 11px; margin-top: 24px;">
                 Source: disclosures-clerk.house.gov
@@ -185,7 +223,7 @@ def build_report_body(scored_trades, total_filings):
             {date_str} &mdash; <strong>{flagged}</strong> trade(s) flagged above routine
         </p>
         <hr style="border: none; border-top: 2px solid #1a365d; margin-bottom: 20px;">
-
+        {error_banner}
         {tier_html}
 
         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px; margin-top: 8px;">
@@ -203,19 +241,40 @@ def build_report_body(scored_trades, total_filings):
     </html>"""
 
 
-def build_no_filings_body():
+def build_no_filings_body(errors=None):
     """Build the HTML email for days with no new PTR filings."""
+    errors = errors or []
     date_str = datetime.now().strftime("%B %d, %Y")
+    error_banner = build_error_banner(errors)
+
+    if errors:
+        # Both scrapers may have failed outright (e.g. a site outage) before
+        # any filings could actually be checked — this is NOT the same as a
+        # confirmed quiet day, so don't claim the sites were successfully
+        # checked when they weren't.
+        headline = "Pipeline errors prevented a full check for new filings today."
+        detail = (
+            "One or more disclosure sites could not be checked successfully this run "
+            "(see the error details above). This is different from a confirmed "
+            "\"no new filings\" day — the pipeline may not have actually looked."
+        )
+    else:
+        headline = "No new congressional trade filings today."
+        detail = (
+            "The pipeline checked House and Senate disclosure sites and found no new PTR "
+            "filings since the last run."
+        )
+
     return f"""
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 16px;">
         <h2 style="color: #1a365d;">Congressional Trade Alert</h2>
         <p style="color: #555;">{date_str}</p>
         <hr style="border: none; border-top: 2px solid #1a365d; margin-bottom: 20px;">
-        <p style="font-size: 16px; color: #333;">No new congressional trade filings today.</p>
+        {error_banner}
+        <p style="font-size: 16px; color: #333;">{headline}</p>
         <p style="color: #888; font-size: 13px;">
-            The pipeline checked House and Senate disclosure sites and found no new PTR filings
-            since the last run.
+            {detail}
         </p>
         <p style="color: #aaa; font-size: 11px; margin-top: 24px;">
             Source: disclosures-clerk.house.gov &bull; efdsearch.senate.gov
@@ -224,15 +283,19 @@ def build_no_filings_body():
     </html>"""
 
 
-def build_subject(scored_trades, no_new_filings=False):
+def build_subject(scored_trades, no_new_filings=False, has_errors=False):
     """Build the email subject line."""
     date_str = datetime.now().strftime("%m/%d")
+    # Surface errors in the subject itself so they're visible from the inbox
+    # list view, without needing to open an email that otherwise looks like
+    # a routine "nothing to report" day.
+    prefix = "\u26a0 " if has_errors else ""
     if no_new_filings:
-        return f"Congressional Trade Alert ({date_str}): No new filings"
+        return f"{prefix}Congressional Trade Alert ({date_str}): No new filings"
     flagged = sum(1 for t in scored_trades if t.get("tag", "routine") != "routine")
     if flagged:
-        return f"Congressional Trade Alert ({date_str}): {flagged} flagged trade(s)"
-    return f"Congressional Trade Alert ({date_str}): No noteworthy trades"
+        return f"{prefix}Congressional Trade Alert ({date_str}): {flagged} flagged trade(s)"
+    return f"{prefix}Congressional Trade Alert ({date_str}): No noteworthy trades"
 
 
 def _credentials_error(setting_name):
@@ -276,21 +339,27 @@ def _send(subject, html_body):
         return False
 
 
-def send_report(scored_trades, total_filings=None, no_new_filings=False):
+def send_report(scored_trades, total_filings=None, no_new_filings=False, errors=None):
     """
     Send the scored trade report.
     Called by main.py with scored trade data.
+
+    `errors` is an optional list of human-readable messages describing any
+    pipeline steps that failed this run — when present, the email visibly
+    flags that the results may be incomplete instead of silently looking
+    like a normal, fully-successful "nothing to report" day.
     """
+    errors = errors or []
     if no_new_filings:
-        subject = build_subject([], no_new_filings=True)
-        body = build_no_filings_body()
+        subject = build_subject([], no_new_filings=True, has_errors=bool(errors))
+        body = build_no_filings_body(errors=errors)
         return _send(subject, body)
 
     if total_filings is None:
         total_filings = len(set(t.get("filing_id", "") for t in scored_trades))
 
-    subject = build_subject(scored_trades)
-    body = build_report_body(scored_trades, total_filings)
+    subject = build_subject(scored_trades, has_errors=bool(errors))
+    body = build_report_body(scored_trades, total_filings, errors=errors)
     return _send(subject, body)
 
 
