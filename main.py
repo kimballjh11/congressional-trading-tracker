@@ -28,7 +28,12 @@ def run():
     filings_count = 0
     trades_flagged = 0
     email_sent = False
-    error_occurred = False
+    # Human-readable messages for any step that failed this run. Passed
+    # through to send_report() so the email itself visibly flags a failed
+    # run instead of looking identical to a genuinely quiet day — the run
+    # log/CI status alone aren't enough since most users only ever see the
+    # email, not data/run_log.txt or the GitHub Actions log.
+    errors = []
 
     def finish():
         if not email_sent and os.getenv("GITHUB_ACTIONS"):
@@ -44,7 +49,7 @@ def run():
     except Exception as e:
         log(f"ERROR in House scraper: {e}")
         house_filings = []
-        error_occurred = True
+        errors.append(f"House scraper failed: {e}")
 
     try:
         # ─── STEP 1b: SCRAPE SENATE ───
@@ -55,7 +60,7 @@ def run():
     except Exception as e:
         log(f"ERROR in Senate scraper: {e}")
         senate_filings = []
-        error_occurred = True
+        errors.append(f"Senate scraper failed: {e}")
 
     all_filings = house_filings + senate_filings
     filings_count = len(all_filings)
@@ -67,14 +72,14 @@ def run():
             print("\n" + "=" * 60)
             print("STEP 5: Sending daily email report")
             print("=" * 60)
-            email_sent = send_report([], no_new_filings=True)
+            email_sent = send_report([], no_new_filings=True, errors=errors)
         except Exception as e:
             log(f"ERROR in emailer: {e}")
-            error_occurred = True
+            errors.append(f"Emailer failed: {e}")
             email_sent = False
 
         email_status = "sent" if email_sent else "FAILED"
-        status = "SUCCESS" if not error_occurred else "PARTIAL"
+        status = "SUCCESS" if not errors else "PARTIAL"
         log(f"Pipeline {status} — 0 new filings, email {email_status}")
         finish()
         return
@@ -88,21 +93,21 @@ def run():
         trades = parse_all_filings(all_filings)
     except Exception as e:
         log(f"ERROR in parser: {e}")
-        error_occurred = True
+        errors.append(f"Parser failed: {e}")
 
     if not trades:
         try:
             print("\n" + "=" * 60)
             print("STEP 5: Sending daily email report")
             print("=" * 60)
-            email_sent = send_report([], total_filings=filings_count)
+            email_sent = send_report([], total_filings=filings_count, errors=errors)
         except Exception as e:
             log(f"ERROR in emailer: {e}")
-            error_occurred = True
+            errors.append(f"Emailer failed: {e}")
             email_sent = False
 
         email_status = "sent" if email_sent else "FAILED"
-        status = "SUCCESS" if not error_occurred else "PARTIAL"
+        status = "SUCCESS" if not errors else "PARTIAL"
         log(f"Pipeline {status} — {filings_count} filings, 0 trades parsed, email {email_status}")
         finish()
         return
@@ -115,7 +120,7 @@ def run():
         enrich_trades()
     except Exception as e:
         log(f"ERROR in enricher: {e}")
-        error_occurred = True
+        errors.append(f"Enricher failed: {e}")
 
     # ─── STEP 4: SCORE ───
     scored = []
@@ -126,7 +131,7 @@ def run():
         scored = score_trades()
     except Exception as e:
         log(f"ERROR in scorer: {e}")
-        error_occurred = True
+        errors.append(f"Scorer failed: {e}")
 
     trades_flagged = sum(1 for t in scored if t.get("score", 0) > 25)
 
@@ -135,12 +140,12 @@ def run():
         print("\n" + "=" * 60)
         print("STEP 5: Sending email report")
         print("=" * 60)
-        email_sent = send_report(scored, total_filings=filings_count)
+        email_sent = send_report(scored, total_filings=filings_count, errors=errors)
     except Exception as e:
         log(f"ERROR in emailer: {e}")
-        error_occurred = True
+        errors.append(f"Emailer failed: {e}")
 
-    status = "SUCCESS" if not error_occurred else "PARTIAL"
+    status = "SUCCESS" if not errors else "PARTIAL"
     email_status = "sent" if email_sent else "FAILED"
     log(f"Pipeline {status} — {filings_count} filings, "
         f"{len(trades)} trades parsed, {trades_flagged} flagged, "
