@@ -3,7 +3,7 @@
 import os
 from datetime import datetime
 
-from config import RUN_LOG_FILE, DATA_DIR
+from config import RUN_LOG_FILE, DATA_DIR, SCORE_NOTEWORTHY
 from scraper import get_new_trades
 from senate_scraper import get_new_senate_trades
 from parser import parse_all_filings
@@ -128,7 +128,12 @@ def run():
         log(f"ERROR in scorer: {e}")
         error_occurred = True
 
-    trades_flagged = sum(1 for t in scored if t.get("score", 0) > 25)
+    # Use the same threshold scorer.tag_from_score() uses to decide
+    # "noteworthy" vs. "routine" — not a hardcoded literal — so this count
+    # doesn't silently drift from what the email actually shows if
+    # SCORE_NOTEWORTHY is ever customized in config.py (which the README
+    # explicitly invites users to do).
+    trades_flagged = sum(1 for t in scored if t.get("score", 0) >= SCORE_NOTEWORTHY)
 
     # ─── STEP 5: EMAIL ───
     try:

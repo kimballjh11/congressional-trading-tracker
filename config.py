@@ -77,9 +77,12 @@ EMAIL_TIERS = [
     ("noteworthy", "Noteworthy", "#2563eb", "#eff6ff"),
 ]
 
-# Only trades scoring above this threshold appear in the email.
-# Trades at or below this score are tagged "routine" and omitted.
-EMAIL_MIN_SCORE = 25
+# Trades tagged "routine" (score < SCORE_NOTEWORTHY, see the scoring
+# thresholds above) are omitted from the email body and only counted in
+# the summary footer. SCORE_NOTEWORTHY is the actual live cutoff — there
+# used to be a separate EMAIL_MIN_SCORE constant here, but nothing ever
+# read it, so editing it had no effect. Removed to avoid the false
+# impression that it's a working, independently-adjustable knob.
 
 # SMTP server settings (Gmail default)
 SMTP_SERVER = "smtp.gmail.com"

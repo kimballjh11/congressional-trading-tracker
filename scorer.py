@@ -31,24 +31,44 @@ def score_committee_match(trade):
     """
     +25 if a member's committee relates to the stock's sector.
     +10 for Ways and Means (affects all sectors via tax policy).
+
+    These are two independent signals — a member can sit on Ways and Means
+    (broad tax-policy influence over every sector) AND a sector-specific
+    committee (direct oversight of that stock's industry) at the same time.
+    Real examples: Rep. Feenstra sits on both Ways and Means and Agriculture;
+    Rep. Tenney sits on both Ways and Means and Science, Space, and
+    Technology. Both bonuses apply when both conditions are met, rather than
+    stopping at whichever committee happens to be checked first.
     """
     committees = trade.get("committees", [])
     sector = trade.get("sector", "")
     if not committees or not sector:
         return 0, ""
 
-    # Check Ways and Means first (special case)
+    total = 0
+    reasons = []
+
+    # Ways and Means (special case — applies to every sector via tax policy)
     for comm in committees:
         if "Ways and Means" in comm:
-            return POINTS_WAYS_AND_MEANS, f"Committee match: {comm} → {sector} (tax policy, +{POINTS_WAYS_AND_MEANS})"
+            total += POINTS_WAYS_AND_MEANS
+            reasons.append(f"Committee match: {comm} → {sector} (tax policy, +{POINTS_WAYS_AND_MEANS})")
+            break
 
-    # Check specific committee-sector mappings
+    # Specific committee-sector mappings (stop at the first match so a
+    # member on several committees overseeing the same sector isn't scored
+    # multiple times for what is effectively one signal)
     for comm in committees:
         for keyword, sectors in COMMITTEE_SECTOR_MAP.items():
             if keyword.lower() in comm.lower() and sector in sectors:
-                return POINTS_COMMITTEE_MATCH, f"Committee match: {comm} → {sector} (+{POINTS_COMMITTEE_MATCH})"
+                total += POINTS_COMMITTEE_MATCH
+                reasons.append(f"Committee match: {comm} → {sector} (+{POINTS_COMMITTEE_MATCH})")
+                break
+        else:
+            continue
+        break
 
-    return 0, ""
+    return total, " ".join(reasons)
 
 
 # ─── SIGNAL 2: LARGE TRADE SIZE ───
