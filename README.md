@@ -32,6 +32,38 @@ The setup script will:
 - Set up daily automation for your OS
 - Offer a test run
 
+Prefer a non-interactive setup (e.g. scripting a fresh machine)? Create your
+`.env` from `.env.example` first, then run `scripts/finish_setup.sh` instead —
+it creates the virtual environment, installs dependencies, sets up a cron job
+on Linux, and does a test run, all without any prompts.
+
+## Running via GitHub Actions (no local machine required)
+
+This repo also ships a ready-to-use workflow at
+`.github/workflows/daily-report.yml` that runs the pipeline entirely in
+GitHub's cloud on a daily schedule — no `setup.py`, cron job, or LaunchAgent
+needed:
+
+1. Fork or clone this repo into your own GitHub account.
+2. Go to **Settings → Secrets and variables → Actions → Repository secrets**
+   and add two secrets: `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD` (same values
+   as `.env` would hold — see Requirements below for how to generate an App
+   Password).
+3. The **Daily Congressional Trade Report** workflow now runs automatically
+   once a day. You can also trigger it manually anytime from the **Actions**
+   tab via **Run workflow** (`workflow_dispatch`).
+4. `data/` (which holds `seen_trades.json` and `run_log.txt`) is persisted
+   between runs using `actions/cache`, so the workflow remembers which
+   filings it has already processed the same way a local install would.
+
+**Important:** with this workflow, the pipeline sends an email **every single
+day**, even when there are no new filings or nothing noteworthy — see
+"Every day says 'no new filings' / 'no noteworthy trades'" under
+Troubleshooting below if that surprises you. If the `GMAIL_ADDRESS` /
+`GMAIL_APP_PASSWORD` secrets are missing or the email fails to send for any
+reason, the workflow run itself fails (turns red) so you get a GitHub
+notification instead of silently missing your report.
+
 ## Requirements
 
 - Python 3.8+
@@ -113,6 +145,11 @@ Edit `config.py` to customize:
 ```
 congressional-trading-tracker/
 ├── setup.py              # Interactive first-time setup
+├── scripts/
+│   └── finish_setup.sh   # Non-interactive setup (no prompts)
+├── .github/
+│   └── workflows/
+│       └── daily-report.yml  # Runs the pipeline daily via GitHub Actions
 ├── config.py             # All configurable settings
 ├── main.py               # Pipeline orchestrator
 ├── run_on_wake.py        # Daily run wrapper (skip if already ran today)
@@ -166,6 +203,20 @@ This is normal if the pipeline already ran today. The scraper tracks which filin
 ```bash
 rm data/seen_trades.json
 ```
+Running via GitHub Actions instead of locally? That file lives inside the
+`data` cache the workflow restores via `actions/cache`, not in your local
+checkout — deleting your local copy won't affect it. To reset it there,
+go to the repo's **Actions** tab → **Caches** and delete the `pipeline-data`
+cache entry, then re-run the workflow.
+
+### Every day says "no new filings" / "no noteworthy trades"
+This is expected, not a bug — the pipeline emails you a report every single
+day it runs, even on quiet days with zero new filings or nothing above the
+routine threshold, so you always have positive confirmation it's still
+running. If you were expecting silence on quiet days instead, that's not
+currently configurable; check the subject line (`No new filings` vs
+`No noteworthy trades` vs `N flagged trade(s)`) to tell the three cases apart
+at a glance.
 
 ### Gmail authentication failed
 - Make sure you're using an **App Password**, not your regular Gmail password
