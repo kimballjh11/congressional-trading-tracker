@@ -9,12 +9,12 @@ import os
 import io
 from bs4 import BeautifulSoup
 
-from config import PARSED_TRADES_FILE, DATA_DIR
+from config import PARSED_TRADES_FILE, DATA_DIR, REQUEST_TIMEOUT
 
 
 def download_pdf(url):
     """Download a PDF and return it as a bytes buffer."""
-    response = requests.get(url)
+    response = requests.get(url, timeout=REQUEST_TIMEOUT)
     if response.status_code != 200:
         print(f"  Failed to download: {url} (status {response.status_code})")
         return None
@@ -316,7 +316,7 @@ def parse_senate_filing(filing):
 
     response = requests.get(url, headers={
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    })
+    }, timeout=REQUEST_TIMEOUT)
     if response.status_code != 200:
         print(f"  Failed to download Senate report: {url} (status {response.status_code})")
         return []

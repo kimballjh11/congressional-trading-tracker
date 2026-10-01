@@ -81,6 +81,9 @@ EMAIL_TIERS = [
 # Trades at or below this score are tagged "routine" and omitted.
 EMAIL_MIN_SCORE = 25
 
+# Seconds to wait on any single HTTP request before giving up
+REQUEST_TIMEOUT = 30
+
 # SMTP server settings (Gmail default)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587

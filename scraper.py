@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime
 
-from config import SEEN_TRADES_FILE, HOUSE_CLERK_URL, DATA_DIR
+from config import SEEN_TRADES_FILE, HOUSE_CLERK_URL, DATA_DIR, REQUEST_TIMEOUT
 
 
 def load_seen_trades():
@@ -51,11 +51,10 @@ def fetch_house_filings(year=None):
         "toDate": "",
     }
 
-    response = requests.post(HOUSE_CLERK_URL, data=data)
+    response = requests.post(HOUSE_CLERK_URL, data=data, timeout=REQUEST_TIMEOUT)
 
     if response.status_code != 200:
-        print(f"Error fetching data: status code {response.status_code}")
-        return []
+        raise RuntimeError(f"House Clerk returned status {response.status_code}")
 
     html = response.text
     filings = parse_filings_html(html)
@@ -119,7 +118,7 @@ def get_new_trades():
     1. Fetch all PTR filings from the House Clerk
     2. Compare against what we've already seen
     3. Return only the new ones
-    4. Save updated seen list
+    (main.py marks them seen once they've been reported)
     """
     seen = load_seen_trades()
     print(f"Previously seen filings: {len(seen)}")
@@ -132,9 +131,6 @@ def get_new_trades():
     for filing in filings:
         if filing["filing_id"] not in seen:
             new_filings.append(filing)
-            seen.add(filing["filing_id"])
-
-    save_seen_trades(seen)
 
     print(f"New filings found: {len(new_filings)}")
     return new_filings

@@ -13,7 +13,7 @@ import json
 import os
 from datetime import datetime, timedelta
 
-from config import SEEN_TRADES_FILE, SENATE_EFDS_URL, DATA_DIR
+from config import SEEN_TRADES_FILE, SENATE_EFDS_URL, DATA_DIR, REQUEST_TIMEOUT
 
 BASE_URL = SENATE_EFDS_URL
 REPORT_TYPE_PTR = "11"  # Senate report type code for Periodic Transaction Reports
@@ -33,18 +33,16 @@ def create_session():
 
     # Step 1: Load the home page to get CSRF token and cookies
     print("  Connecting to Senate EFDS...")
-    resp = session.get(f"{BASE_URL}/search/home/")
+    resp = session.get(f"{BASE_URL}/search/home/", timeout=REQUEST_TIMEOUT)
     if resp.status_code != 200:
-        print(f"  Failed to load Senate EFDS: status {resp.status_code}")
-        return None
+        raise RuntimeError(f"Senate EFDS home page returned status {resp.status_code}")
 
     # Extract CSRF token from the form
     csrf_match = re.search(
         r'csrfmiddlewaretoken"\s+value="([^"]+)"', resp.text
     )
     if not csrf_match:
-        print("  Could not find CSRF token on Senate EFDS page")
-        return None
+        raise RuntimeError("Could not find CSRF token on Senate EFDS page")
 
     csrf_token = csrf_match.group(1)
 
@@ -59,6 +57,7 @@ def create_session():
             "Referer": f"{BASE_URL}/search/home/",
             "Origin": BASE_URL,
         },
+        timeout=REQUEST_TIMEOUT,
     )
 
     # The CSRF token for API calls comes from the cookie
@@ -109,24 +108,20 @@ def search_ptr_filings(session, start_date=None, end_date=None):
             "X-Requested-With": "XMLHttpRequest",
             "X-CSRFToken": csrf_cookie,
         },
+        timeout=REQUEST_TIMEOUT,
     )
 
     if resp.status_code != 200:
-        print(f"  Search failed: status {resp.status_code}")
-        return []
+        raise RuntimeError(f"Senate EFDS search returned status {resp.status_code}")
 
     # Check if we got the maintenance page instead of JSON
     if "Site Under Maintenance" in resp.text:
-        print("  Senate EFDS search backend is under maintenance.")
-        print("  The front-end loads but the search API is temporarily down.")
-        print("  Senate filings will be skipped for this run.")
-        return []
+        raise RuntimeError("Senate EFDS search backend is under maintenance")
 
     try:
         result = resp.json()
     except (json.JSONDecodeError, ValueError):
-        print("  Failed to parse search results as JSON")
-        return []
+        raise RuntimeError("Senate EFDS search results were not valid JSON")
 
     total = result.get("recordsTotal", 0)
     print(f"  Total PTR filings found: {total}")
@@ -151,6 +146,7 @@ def search_ptr_filings(session, start_date=None, end_date=None):
                 "X-Requested-With": "XMLHttpRequest",
                 "X-CSRFToken": csrf_cookie,
             },
+            timeout=REQUEST_TIMEOUT,
         )
 
         if resp.status_code != 200 or "Site Under Maintenance" in resp.text:
@@ -256,9 +252,6 @@ def get_new_senate_trades():
     print(f"Previously seen Senate filings: {len(senate_seen)}")
 
     session = create_session()
-    if not session:
-        print("Failed to establish Senate EFDS session")
-        return []
 
     filings = search_ptr_filings(session)
 
@@ -266,9 +259,6 @@ def get_new_senate_trades():
     for filing in filings:
         if filing["filing_id"] not in seen:
             new_filings.append(filing)
-            seen.add(filing["filing_id"])
-
-    save_seen_trades(seen)
 
     print(f"New Senate filings found: {len(new_filings)}")
     return new_filings

@@ -13,7 +13,7 @@ import yfinance as yf
 
 from config import (
     PARSED_TRADES_FILE, ENRICHED_TRADES_FILE, DATA_DIR,
-    HOUSE_MEMBER_XML, SENATE_ASSIGNMENTS_URL,
+    HOUSE_MEMBER_XML, SENATE_ASSIGNMENTS_URL, REQUEST_TIMEOUT,
 )
 
 
@@ -25,7 +25,7 @@ def fetch_house_committee_data():
     Key is "LastName, FirstName|StateDistrict".
     """
     print("Fetching House committee data from clerk.house.gov...")
-    response = requests.get(HOUSE_MEMBER_XML)
+    response = requests.get(HOUSE_MEMBER_XML, timeout=REQUEST_TIMEOUT)
     if response.status_code != 200:
         print(f"  Failed to fetch House committee data: {response.status_code}")
         return {}
@@ -86,6 +86,7 @@ def fetch_senate_committee_data():
     response = requests.get(
         SENATE_ASSIGNMENTS_URL,
         headers={"User-Agent": "Mozilla/5.0"},
+        timeout=REQUEST_TIMEOUT,
     )
     if response.status_code != 200:
         print(f"  Failed to fetch Senate committee data: {response.status_code}")

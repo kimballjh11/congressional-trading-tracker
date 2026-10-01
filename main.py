@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 from config import RUN_LOG_FILE, DATA_DIR
-from scraper import get_new_trades
+from scraper import get_new_trades, load_seen_trades, save_seen_trades
 from senate_scraper import get_new_senate_trades
 from parser import parse_all_filings
 from enricher import enrich_trades
@@ -20,6 +20,13 @@ def log(message):
     with open(RUN_LOG_FILE, "a") as f:
         f.write(line)
     print(line.strip())
+
+
+def mark_filings_seen(filings):
+    """Record filings as processed so future runs don't report them again."""
+    seen = load_seen_trades()
+    seen.update(f["filing_id"] for f in filings)
+    save_seen_trades(seen)
 
 
 def run():
@@ -58,7 +65,8 @@ def run():
           f"(House: {len(house_filings)}, Senate: {len(senate_filings)})")
 
     if not all_filings:
-        log(f"Pipeline finished — no new filings found")
+        suffix = " (scraper errors above)" if error_occurred else ""
+        log(f"Pipeline finished — no new filings found{suffix}")
         return
 
     # ─── STEP 2: PARSE ───
@@ -73,6 +81,8 @@ def run():
         error_occurred = True
 
     if not trades:
+        if not error_occurred:
+            mark_filings_seen(all_filings)
         log(f"Pipeline finished — {filings_count} filings, 0 trades parsed")
         return
 
@@ -108,6 +118,11 @@ def run():
     except Exception as e:
         log(f"ERROR in emailer: {e}")
         error_occurred = True
+
+    # Only mark filings seen once the report went out, so a crash or
+    # failed email means they get picked up again on the next run
+    if email_sent:
+        mark_filings_seen(all_filings)
 
     status = "SUCCESS" if not error_occurred else "PARTIAL"
     email_status = "sent" if email_sent else "FAILED"

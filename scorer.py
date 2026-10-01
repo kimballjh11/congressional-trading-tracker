@@ -6,6 +6,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from collections import defaultdict
+from functools import lru_cache
 
 try:
     import yfinance as yf
@@ -196,9 +197,11 @@ def score_contrarian(trade):
 
     try:
         start = tx_date - timedelta(days=CONTRARIAN_LOOKBACK_DAYS)
-        end = tx_date - timedelta(days=1)
-        stock = yf.Ticker(ticker)
-        hist = stock.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
+        end = tx_date - timedelta(days=2)  # .loc is inclusive, so this matches the old exclusive end of tx_date - 1
+        hist = fetch_price_history(ticker)
+        if hist is None:
+            return 0, ""
+        hist = hist.loc[start.strftime("%Y-%m-%d"):end.strftime("%Y-%m-%d")]
 
         if hist.empty or len(hist) < 5:
             return 0, ""
@@ -215,6 +218,23 @@ def score_contrarian(trade):
 
     except Exception as e:
         return 0, ""
+
+
+@lru_cache(maxsize=None)
+def fetch_price_history(ticker):
+    """
+    Fetch ~2 years of daily prices for a ticker, once per run.
+    Without this cache every purchase triggered its own Yahoo Finance
+    request, which made big runs take hours.
+    """
+    try:
+        hist = yf.Ticker(ticker).history(period="2y", timeout=20)
+    except Exception:
+        return None
+    if hist.empty:
+        return None
+    hist.index = hist.index.tz_localize(None)
+    return hist
 
 
 # ─── MAIN SCORING ───
