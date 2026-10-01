@@ -37,6 +37,11 @@ def run():
     email_sent = False
     error_occurred = False
 
+    def finish():
+        if not email_sent and os.getenv("GITHUB_ACTIONS"):
+            print("ERROR: Email was not sent. Failing CI run.")
+            raise SystemExit(1)
+
     try:
         # ─── STEP 1: SCRAPE HOUSE ───
         print("=" * 60)
@@ -65,8 +70,20 @@ def run():
           f"(House: {len(house_filings)}, Senate: {len(senate_filings)})")
 
     if not all_filings:
-        suffix = " (scraper errors above)" if error_occurred else ""
-        log(f"Pipeline finished — no new filings found{suffix}")
+        try:
+            print("\n" + "=" * 60)
+            print("STEP 5: Sending daily email report")
+            print("=" * 60)
+            email_sent = send_report([], no_new_filings=True)
+        except Exception as e:
+            log(f"ERROR in emailer: {e}")
+            error_occurred = True
+            email_sent = False
+
+        email_status = "sent" if email_sent else "FAILED"
+        status = "SUCCESS" if not error_occurred else "PARTIAL"
+        log(f"Pipeline {status} — 0 new filings, email {email_status}")
+        finish()
         return
 
     # ─── STEP 2: PARSE ───
@@ -81,9 +98,23 @@ def run():
         error_occurred = True
 
     if not trades:
-        if not error_occurred:
+        try:
+            print("\n" + "=" * 60)
+            print("STEP 5: Sending daily email report")
+            print("=" * 60)
+            email_sent = send_report([], total_filings=filings_count)
+        except Exception as e:
+            log(f"ERROR in emailer: {e}")
+            error_occurred = True
+            email_sent = False
+
+        if email_sent and not error_occurred:
             mark_filings_seen(all_filings)
-        log(f"Pipeline finished — {filings_count} filings, 0 trades parsed")
+
+        email_status = "sent" if email_sent else "FAILED"
+        status = "SUCCESS" if not error_occurred else "PARTIAL"
+        log(f"Pipeline {status} — {filings_count} filings, 0 trades parsed, email {email_status}")
+        finish()
         return
 
     # ─── STEP 3: ENRICH ───
@@ -121,7 +152,7 @@ def run():
 
     # Only mark filings seen once the report went out, so a crash or
     # failed email means they get picked up again on the next run
-    if email_sent:
+    if email_sent and scored:
         mark_filings_seen(all_filings)
 
     status = "SUCCESS" if not error_occurred else "PARTIAL"
@@ -133,6 +164,7 @@ def run():
     print("\n" + "=" * 60)
     print("Pipeline complete.")
     print("=" * 60)
+    finish()
 
 
 if __name__ == "__main__":

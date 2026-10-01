@@ -1,0 +1,50 @@
+name: Daily Congressional Trade Report
+
+on:
+  schedule:
+    # 8:00 AM US Eastern (13:00 UTC during EST, 12:00 UTC during EDT)
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Restore pipeline data cache
+        uses: actions/cache@v4
+        with:
+          path: data
+          # Caches can't be overwritten, so save under a new key each run and
+          # restore the most recent one; a fixed key froze the seen list
+          key: pipeline-data-${{ github.run_id }}
+          restore-keys: pipeline-data
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify Gmail secrets
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          if [ -z "$GMAIL_ADDRESS" ] || [ -z "$GMAIL_APP_PASSWORD" ]; then
+            echo "::error::Gmail secrets are missing or empty."
+            echo "Go to Settings → Secrets and variables → Actions → Repository secrets"
+            echo "Add exactly: GMAIL_ADDRESS and GMAIL_APP_PASSWORD"
+            exit 1
+          fi
+          echo "Gmail secrets are configured."
+
+      - name: Run pipeline
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python main.py

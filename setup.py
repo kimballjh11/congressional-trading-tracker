@@ -194,6 +194,14 @@ def setup_macos_launchagent(python_path):
     <key>RunAtLoad</key>
     <true/>
 
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
     <key>StandardOutPath</key>
     <string>{stdout_log}</string>
 
@@ -217,8 +225,8 @@ def setup_macos_launchagent(python_path):
 
     print(f"LaunchAgent installed at:")
     print(f"  {plist_path}")
-    print(f"\nThe pipeline will run automatically each time you log in.")
-    print(f"It only runs once per day — subsequent logins are skipped.")
+    print(f"\nThe pipeline will run automatically at 8:00 AM each day")
+    print(f"and once when you log in (skipped if it already ran today).")
     print(f"\nTo disable later:")
     print(f"  launchctl unload {plist_path}")
 
