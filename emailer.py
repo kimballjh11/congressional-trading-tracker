@@ -1,6 +1,7 @@
 # emailer.py — Send a polished HTML report of scored congressional trades
 # Uses Gmail SMTP with an App Password (stored in .env).
 
+import html
 import smtplib
 import json
 import os
@@ -44,15 +45,30 @@ def compute_disclosure_delay(trade):
 
 
 def build_trade_row(trade):
-    """Build an HTML table row for a single trade."""
-    ticker = trade.get("ticker", "")
+    """
+    Build an HTML table row for a single trade.
+
+    Every field below is sourced from text scraped/parsed out of a
+    government PDF or HTML page (asset names, representative names,
+    committee names, free-text "reason" strings, etc.) rather than typed
+    by a trusted operator. None of it was ever HTML-escaped before being
+    dropped into this f-string, so a stray "&", "<", or ">" picked up from
+    a filing (or a malformed/CDN-injected page) corrupts the rendered
+    email, and anything resembling an HTML tag/attribute is interpreted
+    literally by the recipient's email client. Escape every such field.
+    """
+    ticker = html.escape(trade.get("ticker", ""))
     ticker_display = f"<strong>{ticker}</strong>" if ticker else "—"
     tx_type = trade.get("transaction_type", "N/A")
-    committees = ", ".join(trade.get("committees", [])) or "—"
+    committees = html.escape(", ".join(trade.get("committees", []))) or "—"
     delay = compute_disclosure_delay(trade)
     score = trade.get("score", 0)
-    reason = trade.get("reason", "")
+    reason = html.escape(trade.get("reason", ""))
     pdf_url = trade.get("pdf_url", "")
+    representative = html.escape(trade.get("representative", "Unknown"))
+    asset = html.escape(trade.get("asset", "N/A"))
+    amount = html.escape(trade.get("amount", "N/A"))
+    transaction_date = html.escape(trade.get("transaction_date", "N/A"))
 
     if "Purchase" in tx_type:
         type_color = "#22863a"
@@ -62,24 +78,29 @@ def build_trade_row(trade):
         type_label = "SELL (partial)" if "partial" in tx_type else "SELL"
     else:
         type_color = "#555"
-        type_label = tx_type
+        type_label = html.escape(tx_type)
+
+    # pdf_url lands inside a quoted href attribute, so it also needs
+    # attribute-safe escaping (quote=True) to stop a value containing a
+    # literal `"` from breaking out of the attribute entirely.
+    pdf_url_escaped = html.escape(pdf_url, quote=True) if pdf_url else ""
 
     return f"""
     <tr style="border-bottom: 1px solid #e2e8f0;">
         <td style="padding: 10px 8px; vertical-align: top;">
-            <strong>{trade.get('representative', 'Unknown')}</strong><br>
+            <strong>{representative}</strong><br>
             <span style="color: #666; font-size: 12px;">{committees}</span>
         </td>
         <td style="padding: 10px 8px; vertical-align: top;">
-            {trade.get('asset', 'N/A')}<br>
+            {asset}<br>
             <span style="font-size: 13px;">Ticker: {ticker_display}</span>
         </td>
         <td style="padding: 10px 8px; vertical-align: top; color: {type_color}; font-weight: bold;">
             {type_label}
         </td>
-        <td style="padding: 10px 8px; vertical-align: top;">{trade.get('amount', 'N/A')}</td>
+        <td style="padding: 10px 8px; vertical-align: top;">{amount}</td>
         <td style="padding: 10px 8px; vertical-align: top;">
-            {trade.get('transaction_date', 'N/A')}<br>
+            {transaction_date}<br>
             <span style="color: #888; font-size: 12px;">{delay} day delay</span>
         </td>
         <td style="padding: 10px 8px; vertical-align: top; text-align: center;">
@@ -89,7 +110,7 @@ def build_trade_row(trade):
     <tr style="border-bottom: 2px solid #e2e8f0;">
         <td colspan="6" style="padding: 4px 8px 12px 8px;">
             <span style="font-size: 12px; color: #555;">{reason}</span>
-            {f'<br><a href="{pdf_url}" style="font-size: 12px; color: #2563eb;">View original PDF</a>' if pdf_url else ''}
+            {f'<br><a href="{pdf_url_escaped}" style="font-size: 12px; color: #2563eb;">View original PDF</a>' if pdf_url_escaped else ''}
         </td>
     </tr>"""
 
