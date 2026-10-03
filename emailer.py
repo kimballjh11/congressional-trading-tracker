@@ -137,9 +137,11 @@ def build_report_body(scored_trades, total_filings):
         else:
             routine_count += 1
 
-    # Count flagged (above routine)
+    # Count flagged (above routine). `routine_count` was already fully
+    # tallied in the loop above (every trade lands in exactly one tier
+    # bucket or the `else` branch) — do NOT add anything to it here, or
+    # every routine trade gets counted twice in the email summary.
     flagged = sum(len(v) for v in tier_buckets.values())
-    routine_count += len(scored_trades) - flagged
 
     # If nothing noteworthy, send the short version
     if flagged == 0:
