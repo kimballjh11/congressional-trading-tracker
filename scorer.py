@@ -208,6 +208,8 @@ def score_contrarian(trade):
 
         price_start = hist["Close"].iloc[0]
         price_end = hist["Close"].iloc[-1]
+        if not price_start:
+            return 0, ""
         pct_change = ((price_end - price_start) / price_start) * 100
 
         if pct_change < CONTRARIAN_DROP_THRESHOLD:
