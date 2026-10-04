@@ -197,7 +197,11 @@ def score_contrarian(trade):
 
     try:
         start = tx_date - timedelta(days=CONTRARIAN_LOOKBACK_DAYS)
-        end = tx_date - timedelta(days=2)  # .loc is inclusive, so this matches the old exclusive end of tx_date - 1
+        # .loc slicing is inclusive on both ends, so end = tx_date - 1 includes
+        # the most recent trading day *before* the purchase. (tx_date - 2 would
+        # silently drop that day from the window, understating/overstating the
+        # true pre-purchase price move.)
+        end = tx_date - timedelta(days=1)
         hist = fetch_price_history(ticker)
         if hist is None:
             return 0, ""
