@@ -127,14 +127,25 @@ def search_ptr_filings(session, start_date=None, end_date=None):
     print(f"  Total PTR filings found: {total}")
 
     filings = []
-    for row in result.get("data", []):
+    first_page_rows = result.get("data", [])
+    for row in first_page_rows:
         filing = parse_search_row(row)
         if filing:
             filings.append(filing)
 
+    # Track how many rows we've actually asked the server for, separately
+    # from how many turned into a `filing` dict. `parse_search_row` returns
+    # None for some rows (malformed rows, or a report type that slips past
+    # the server-side filter), so `len(filings)` can be smaller than the
+    # number of rows already consumed. Using `len(filings)` as the next
+    # "start" offset would then re-request rows we've already seen instead
+    # of advancing past them — causing duplicate filings in the result
+    # (confirmed live: a 1/3 non-PTR-row sample produced 35% duplicates).
+    rows_fetched = len(first_page_rows)
+
     # If there are more results, paginate
-    while len(filings) < total:
-        data["start"] = str(len(filings))
+    while rows_fetched < total:
+        data["start"] = str(rows_fetched)
         data["draw"] = str(int(data["draw"]) + 1)
 
         resp = session.post(
@@ -161,6 +172,7 @@ def search_ptr_filings(session, start_date=None, end_date=None):
         if not new_rows:
             break
 
+        rows_fetched += len(new_rows)
         for row in new_rows:
             filing = parse_search_row(row)
             if filing:
