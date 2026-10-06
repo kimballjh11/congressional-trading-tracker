@@ -13,12 +13,27 @@ PARSED_TRADES_FILE = os.path.join(DATA_DIR, "parsed_trades.json")
 ENRICHED_TRADES_FILE = os.path.join(DATA_DIR, "enriched_trades.json")
 SCORED_TRADES_FILE = os.path.join(DATA_DIR, "scored_trades.json")
 RUN_LOG_FILE = os.path.join(DATA_DIR, "run_log.txt")
+# Persists the date through which the Senate PTR search has last completed
+# successfully, so a stretch of EFDS downtime doesn't permanently drop
+# filings that fall outside the default lookback window once it recovers.
+SENATE_SCAN_CURSOR_FILE = os.path.join(DATA_DIR, "senate_scan_cursor.json")
 
 # ─── DATA SOURCES ───
 HOUSE_CLERK_URL = "https://disclosures-clerk.house.gov/FinancialDisclosure/ViewMemberSearchResult"
 HOUSE_MEMBER_XML = "https://clerk.house.gov/xml/lists/MemberData.xml"
 SENATE_EFDS_URL = "https://efdsearch.senate.gov"
 SENATE_ASSIGNMENTS_URL = "https://www.senate.gov/general/committee_assignments/assignments.htm"
+# Default lookback window for Senate PTR searches (matches the 45-day STOCK
+# Act disclosure deadline). Used on the very first run, or whenever it's
+# wider than the extended-lookback window below.
+SENATE_DEFAULT_LOOKBACK_DAYS = 45
+# Upper bound on how far back a single Senate search can reach, even after
+# long downtime, so a stale or corrupt scan cursor can't trigger an
+# effectively-unbounded search.
+SENATE_MAX_LOOKBACK_DAYS = 400
+# Extra overlap subtracted from the last successful scan date, to guard
+# against clock skew / timezone edge cases at the boundary of the window.
+SENATE_SCAN_OVERLAP_DAYS = 2
 
 # ─── SCORING THRESHOLDS ───
 # A trade's total score (0–100) determines its tag:
