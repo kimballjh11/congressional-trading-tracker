@@ -130,34 +130,50 @@ def fetch_senate_committee_data():
 
 # ─── UNIFIED COMMITTEE LOOKUP ───
 
-def find_committees_for_member(house_comms, senate_comms, representative, state_district):
+def find_committees_for_member(house_comms, senate_comms, representative, state_district, chamber=""):
     """
     Look up committees for a member across both chambers.
     Tries exact match first, then falls back to last-name matching.
+
+    The lookup is scoped to the trade's own chamber whenever it's known
+    (House trades only search house_comms, Senate trades only search
+    senate_comms). This matters most for the last-name-only fallback:
+    several last names are shared by a House member and a Senator at once
+    (e.g. "Scott", "Cruz"), and searching both chambers' dicts together
+    risks silently attributing one member's committee assignments to a
+    different member in the other chamber. If chamber is unknown/blank,
+    both chambers are searched as before (best-effort).
     """
-    # Determine which lookup to search based on state_district format
-    # House uses "GA12" (state + district), Senate uses "GA" or state name
-    all_comms = {}
-    all_comms.update(house_comms)
-    all_comms.update(senate_comms)
+    if chamber == "House":
+        candidates = house_comms
+    elif chamber == "Senate":
+        candidates = senate_comms
+    else:
+        candidates = {}
+        candidates.update(house_comms)
+        candidates.update(senate_comms)
 
     # Try exact state_district match
-    for key, comms in all_comms.items():
+    for key, comms in candidates.items():
         name_part, sd_part = key.split("|", 1)
         if sd_part == state_district and name_part.split(",")[0].lower() in representative.lower():
             return comms
 
-    # Try matching Senate by state abbreviation (first 2 chars of state_district)
-    state_abbr = state_district[:2] if state_district else ""
-    if state_abbr:
-        for key, comms in senate_comms.items():
-            name_part, sd_part = key.split("|", 1)
-            if sd_part == state_abbr and name_part.split(",")[0].lower() in representative.lower():
-                return comms
+    # Try matching Senate by state abbreviation (first 2 chars of state_district).
+    # Only relevant for Senate trades (or when chamber is unknown) — a House
+    # trade's state_district (e.g. "GA12") sharing its first 2 chars with a
+    # senator's state is a coincidence, not a match.
+    if chamber != "House":
+        state_abbr = state_district[:2] if state_district else ""
+        if state_abbr:
+            for key, comms in senate_comms.items():
+                name_part, sd_part = key.split("|", 1)
+                if sd_part == state_abbr and name_part.split(",")[0].lower() in representative.lower():
+                    return comms
 
-    # Fallback: match on last name only
+    # Fallback: match on last name only, scoped to the same chamber
     last_name = representative.split(",")[0].strip().split()[-1].lower()
-    for key, comms in all_comms.items():
+    for key, comms in candidates.items():
         name_part = key.split("|")[0]
         if name_part.split(",")[0].strip().lower() == last_name:
             return comms
@@ -226,6 +242,7 @@ def enrich_trades():
             senate_comms,
             trade.get("representative", ""),
             trade.get("state_district", ""),
+            trade.get("chamber", ""),
         )
         trade["committees"] = committees
 
