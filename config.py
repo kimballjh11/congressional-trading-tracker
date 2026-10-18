@@ -87,3 +87,7 @@ REQUEST_TIMEOUT = 30
 # SMTP server settings (Gmail default)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
+
+# Timeout (seconds) for the SMTP connection so an unreachable/unresponsive
+# mail server can't hang the pipeline (and the CI job) indefinitely.
+SMTP_TIMEOUT = 30

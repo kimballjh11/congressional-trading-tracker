@@ -9,7 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from dotenv import load_dotenv
 
-from config import SCORED_TRADES_FILE, EMAIL_TIERS, SMTP_SERVER, SMTP_PORT
+from config import SCORED_TRADES_FILE, EMAIL_TIERS, SMTP_SERVER, SMTP_PORT, SMTP_TIMEOUT
 
 load_dotenv()
 
@@ -260,7 +260,7 @@ def _send(subject, html_body):
     print(f"Sending email to {GMAIL_ADDRESS}...")
 
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
             server.starttls()
             server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
             server.sendmail(GMAIL_ADDRESS, GMAIL_ADDRESS, msg.as_string())
