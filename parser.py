@@ -127,10 +127,40 @@ def parse_single_trade(block):
 
     # Extract dates (MM/DD/YYYY format)
     dates = re.findall(r"\d{2}/\d{2}/\d{4}", block)
-    if len(dates) >= 1:
-        trade["transaction_date"] = dates[0]
-    if len(dates) >= 2:
-        trade["notification_date"] = dates[1]
+
+    # Extract transaction type: P (purchase), S (sale), S (partial), E (exchange).
+    # Anchor on the type letter immediately followed by a date, rather than
+    # assuming the letter precedes the *first* date in the block. Bond/Treasury
+    # asset names often embed their own zero-padded maturity or "dated" date
+    # before the type letter (e.g. "US Treas Bill Mat 10/29/2026 DTD P
+    # 05/04/2026 05/12/2026 ..." or "Floyd County IN 4.00% 12/30/2031 P
+    # 12/05/2025 ..."), which would otherwise be mistaken for the transaction
+    # date and cause both the type and the date to come up empty/wrong.
+    tx_match = re.search(r"\b([PSE])\s+(\(partial\)\s+)?(\d{2}/\d{2}/\d{4})", block)
+    if tx_match:
+        tx_code = tx_match.group(1)
+        is_partial = tx_match.group(2) is not None
+        if tx_code == "P":
+            trade["transaction_type"] = "Purchase"
+        elif tx_code == "S" and is_partial:
+            trade["transaction_type"] = "Sale (partial)"
+        elif tx_code == "S":
+            trade["transaction_type"] = "Sale"
+        elif tx_code == "E":
+            trade["transaction_type"] = "Exchange"
+
+    # transaction_date/notification_date are the two dates immediately after
+    # the type letter, found above — not necessarily the first two dates in
+    # the block, for the same embedded-date reason as above.
+    if tx_match:
+        anchor_date = tx_match.group(3)
+        idx = dates.index(anchor_date) if anchor_date in dates else 0
+    else:
+        idx = 0
+    if len(dates) > idx:
+        trade["transaction_date"] = dates[idx]
+    if len(dates) > idx + 1:
+        trade["notification_date"] = dates[idx + 1]
 
     # Extract amount range (e.g., "$15,001 - $50,000" or "$1,001 - $15,000")
     # The range often wraps across lines with other text in between, like:
@@ -142,31 +172,16 @@ def parse_single_trade(block):
     elif len(dollar_amounts) == 1:
         trade["amount"] = dollar_amounts[0]
 
-    # Extract transaction type: P (purchase), S (sale), S (partial), E (exchange)
-    # It appears right before the first date
-    if dates:
-        # Look for a single letter (P, S, E) right before the date
-        tx_match = re.search(r"\b([PSE])\s+(?:\(partial\)\s+)?" + re.escape(dates[0]), block)
-        if tx_match:
-            tx_code = tx_match.group(1)
-            is_partial = "(partial)" in block[tx_match.start():tx_match.start() + 20]
-            if tx_code == "P":
-                trade["transaction_type"] = "Purchase"
-            elif tx_code == "S" and is_partial:
-                trade["transaction_type"] = "Sale (partial)"
-            elif tx_code == "S":
-                trade["transaction_type"] = "Sale"
-            elif tx_code == "E":
-                trade["transaction_type"] = "Exchange"
-            else:
-                trade["transaction_type"] = tx_code
-
-    # Extract asset name — everything from start of block up to the transaction type letter
-    # before the date. We grab the text, remove the ticker bracket, and clean it up.
-    if dates:
+    # Extract asset name — everything from the start of the block up to the
+    # transaction type letter (excluded). Falls back to splitting on the
+    # first date if no type letter was found.
+    if tx_match:
+        asset_section = block[:tx_match.start()]
+    elif dates:
         asset_section = block.split(dates[0])[0]
-        # Remove transaction type letter at the end
-        asset_section = re.sub(r"\s+[PSE]\s*(\(partial\)\s*)?$", "", asset_section)
+    else:
+        asset_section = None
+    if asset_section is not None:
         # Remove bracket codes like [ST], [GS], [OP]
         asset_section = re.sub(r"\[.{1,4}\]", "", asset_section)
         # Remove newlines and collapse whitespace
