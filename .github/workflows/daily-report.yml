@@ -2,8 +2,18 @@ name: Daily Congressional Trade Report
 
 on:
   schedule:
-    # 8:00 AM US Eastern (13:00 UTC during EST, 12:00 UTC during EDT)
-    - cron: "0 13 * * *"
+    # ~8:00 AM US Eastern (13:17 UTC during EST, 12:17 UTC during EDT).
+    # Deliberately NOT on the hour: GitHub Actions' own docs warn that the
+    # `schedule` event "can be delayed during periods of high loads... high
+    # load times include the start of every hour" and recommend scheduling
+    # at a different time of the hour to reduce the chance of delay.
+    # Confirmed live: every one of this workflow's 9 scheduled runs from
+    # 2026-08-30 through 2026-09-07 (while this cron was "0 13 * * *") fired
+    # 2h43m-6h20m after its nominal 13:00 UTC trigger time, so the "daily"
+    # report was consistently landing in the afternoon/evening instead of
+    # the morning. Offsetting the minute won't guarantee on-time delivery,
+    # but avoids the single worst-case scheduling pattern GitHub calls out.
+    - cron: "17 13 * * *"
   workflow_dispatch:
 
 jobs:
