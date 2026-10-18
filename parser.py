@@ -176,6 +176,28 @@ def parse_single_trade(block):
     return trade
 
 
+def extract_cell_text(cell):
+    """
+    Extract the meaningful text from a Senate PTR table cell.
+
+    Real Senate reports render some cells (Ticker, Comment) with a literal
+    "--" placeholder followed by a <br/> and the actual value (e.g. an
+    auto-linked ticker for an Exchange transaction's received security), and
+    render others (Asset Name, for Exchange transactions with a given-up and
+    a received security) as multiple lines separated only by a <br/>. Using
+    BeautifulSoup's default get_text(strip=True) has no separator between
+    those lines, so it silently concatenates them with no space at all (e.g.
+    "--AMCR" or "...(Exchanged)Amcor plc..."). Confirmed live against a real
+    Senate PTR report (Wyden, filed 2026-08-08): the correct values are
+    "AMCR" (dropping the "--" placeholder entirely) and "...(Exchanged)
+    Amcor plc..." (with the lines joined by a space), matching independent
+    third-party parses of the same report.
+    """
+    parts = [s.strip() for s in cell.stripped_strings]
+    parts = [p for p in parts if p and p != "--"]
+    return " ".join(parts)
+
+
 def parse_senate_html(html, filing):
     """
     Parse a Senate PTR HTML report page.
@@ -215,7 +237,7 @@ def parse_senate_html(html, filing):
             if len(cells) < 4:
                 continue
 
-            cell_texts = [c.get_text(strip=True) for c in cells]
+            cell_texts = [extract_cell_text(c) for c in cells]
 
             # Map cells to fields based on header positions
             trade = {
