@@ -81,7 +81,7 @@ Each trade is scored 0–100 based on 7 independent signals. Scores are capped a
 | **Ways & Means** | +10 | Ways & Means committee (affects all sectors via tax policy) |
 | **Large Trade** | +10/+15 | Trade amount >$50K (+10) or >$100K (+15) |
 | **Disclosure Delay** | +8/+15 | Filed 30–37 days late (+8) or 38–45 days, near the legal limit (+15) |
-| **Cluster Trading** | +15/+20 | 2 members traded the same stock (+15) or 3+ members (+20) |
+| **Cluster Trading** | +15/+20 | 2 members traded the same stock within `CLUSTER_LOOKBACK_DAYS` (default 90 days) of each other (+15), or 3+ members (+20) |
 | **Spouse/Dependent** | +10 | Trade made through spouse, dependent, or joint account |
 | **Legislation Timing** | +20 | Trade near a relevant committee hearing (placeholder — not yet implemented) |
 | **Contrarian Buy** | +10 | Stock dropped >10% in 30 days before a purchase |
