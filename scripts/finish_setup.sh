@@ -17,13 +17,23 @@ if [[ ! -f "$PROJECT_DIR/.env" ]]; then
   exit 1
 fi
 
-if [[ ! -d "$VENV_DIR" ]]; then
-  echo "==> Creating virtual environment"
-  "$PYTHON" -m venv "$VENV_DIR"
-fi
-
 PIP="$VENV_DIR/bin/pip"
 PY="$VENV_DIR/bin/python"
+
+if [[ -d "$VENV_DIR" ]] && { [[ ! -x "$PY" ]] || [[ ! -x "$PIP" ]]; }; then
+  echo "==> Found an incomplete virtual environment at $VENV_DIR — removing it"
+  rm -rf "$VENV_DIR"
+fi
+
+if [[ ! -d "$VENV_DIR" ]]; then
+  echo "==> Creating virtual environment"
+  if ! "$PYTHON" -m venv "$VENV_DIR"; then
+    echo "ERROR: failed to create the virtual environment at $VENV_DIR (see the error above)."
+    echo "On Debian/Ubuntu, this is usually fixed by: sudo apt install python3-venv"
+    echo "Then re-run this script."
+    exit 1
+  fi
+fi
 
 echo "==> Installing dependencies"
 "$PIP" install -r requirements.txt
