@@ -339,12 +339,25 @@ def parse_all_filings(filings):
     """
     Parse a list of filings and return all trades found.
     Saves results to data/parsed_trades.json.
+
+    Each filing is parsed inside its own try/except: a single malformed or
+    corrupted filing (e.g. a server returning a non-PDF body — a bot-detection
+    interstitial, a maintenance page, or a genuinely corrupted archived PDF —
+    all with an ordinary HTTP 200 status) must not crash the whole batch and
+    silently discard every OTHER filing's already-extracted trades along with
+    it. Without this, one bad filing anywhere in the list would make
+    parse_all_filings() raise before ever writing PARSED_TRADES_FILE, wiping
+    out every trade parsed from every other filing in the same run.
     """
     print(f"Parsing {len(filings)} filing(s)...\n")
 
     all_trades = []
     for filing in filings:
-        trades = parse_filing(filing)
+        try:
+            trades = parse_filing(filing)
+        except Exception as e:
+            print(f"  ERROR parsing {filing.get('filing_id', '?')}: {e} — skipping this filing")
+            continue
         all_trades.extend(trades)
 
     # Save to disk
