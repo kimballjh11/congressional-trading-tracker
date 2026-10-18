@@ -75,9 +75,14 @@ def check_status():
         check_date -= timedelta(days=1)
     print(f"Consecutive days:  {consecutive}")
 
-    # Missed days in last 7
+    # Missed days in the last 7 completed days.
+    # Today is deliberately excluded: the daily run may simply not have
+    # happened yet (e.g. the scheduled GitHub Actions run doesn't fire
+    # until later today), so flagging today before it's over would be a
+    # false alarm rather than an actual missed day. Only days that have
+    # fully elapsed (yesterday through 7 days ago) count toward misses.
     missed = []
-    for i in range(7):
+    for i in range(1, 8):
         d = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
         if d not in run_dates:
             missed.append(d)
