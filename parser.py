@@ -48,12 +48,66 @@ def extract_filer_info(text):
     return name, state
 
 
+# A trade's optional metadata footer consists of a mandatory "Filing Status:"
+# line (rendered as "F\x00* S\x00*: <value>" due to the PDF's mangled font
+# encoding — see parse_single_trade), optionally followed by "Subholding Of:",
+# "Location:", and/or "Description:" lines, in any order. This footer
+# reliably marks the END of one trade entry.
+_FILING_STATUS_LINE = re.compile(r"^F\x00*\w*\s*S\x00*\w*\s*:")
+_FOOTER_LABEL_LINE = re.compile(r"^(?:S\x00*\w*\s+O\x00*\s*:|L\x00*\s*:|D\x00*\w*\s*:)")
+
+# Multi-page filings repeat the table's column-header row at the top of every
+# page ("ID Owner Asset Transaction Date Notification Amount Cap. / Type Date
+# Gains > / $200?"). Left in place, this boilerplate can land in the middle of
+# a real trade that wraps across the page break.
+_REPEATED_PAGE_HEADER = re.compile(
+    r"ID Owner Asset Transaction Date Notification Amount Cap\.\n"
+    r"Type Date Gains >\n\$200\?\n?"
+)
+
+
+def split_trade_blocks(trade_section):
+    """
+    Split the raw trade section into one block of text per trade.
+
+    Trades cannot be reliably split by looking for their *start*: when a
+    member holds an asset directly (not through a spouse, dependent, or
+    joint account), the PDF's owner-code column is blank, so the trade
+    simply starts with the asset name — which is indistinguishable from
+    ordinary wrapped text. Instead, split on each trade's *end*: the
+    mandatory "Filing Status:" footer line (plus any optional
+    Subholding Of / Location / Description lines that immediately follow
+    it), which is present exactly once per trade regardless of ownership.
+    """
+    blocks = []
+    current_lines = []
+    consuming_footer = False
+
+    for line in trade_section.split("\n"):
+        if not line.strip():
+            continue
+
+        if consuming_footer and not _FOOTER_LABEL_LINE.match(line):
+            # We've finished consuming this trade's footer and this line
+            # isn't more footer metadata, so it starts the next trade.
+            blocks.append("\n".join(current_lines))
+            current_lines = [line]
+            consuming_footer = False
+        else:
+            current_lines.append(line)
+
+        if _FILING_STATUS_LINE.match(line):
+            consuming_footer = True
+
+    if current_lines:
+        blocks.append("\n".join(current_lines))
+
+    return blocks
+
+
 def parse_trades_from_text(text):
     """
     Parse individual trades from the PDF text.
-
-    Each trade block starts with an owner code (SP, JT, DC, etc.)
-    followed by the asset name, transaction type, dates, and amount.
     """
     trades = []
 
@@ -67,14 +121,9 @@ def parse_trades_from_text(text):
     start = header_match.end()
     end = footer_match.start() if footer_match else len(text)
     trade_section = text[start:end].strip()
+    trade_section = _REPEATED_PAGE_HEADER.sub("", trade_section).strip()
 
-    # Split into trade blocks. Each trade starts with an owner code
-    # (1-2 uppercase letters) at the start of a line, followed by the asset.
-    # "Filing Status:" lines mark metadata that follows each trade.
-    # We split on owner codes that start a new trade entry.
-    trade_blocks = re.split(r"\n(?=[A-Z]{1,2} [A-Z])", trade_section)
-
-    for block in trade_blocks:
+    for block in split_trade_blocks(trade_section):
         block = block.strip()
         if not block:
             continue
@@ -107,8 +156,13 @@ def parse_single_trade(block):
         "description": "",
     }
 
-    # Extract owner code (first 1-2 uppercase letters)
-    owner_match = re.match(r"^([A-Z]{1,2})\s+", block)
+    # Extract owner code. Only match the known House PTR codes (SP = spouse,
+    # DC = dependent child, JT = joint) — matching *any* leading 1-2 capital
+    # letters is too loose and false-positives on self-owned assets whose
+    # name happens to start with a short all-caps word followed by a space,
+    # e.g. "US Treasury Bills..." or "GE HealthCare...", stealing part of
+    # the asset name and reporting a bogus owner code.
+    owner_match = re.match(r"^(SP|DC|JT)\s+", block)
     if owner_match:
         trade["owner"] = owner_match.group(1)
         block = block[owner_match.end():]
@@ -172,6 +226,14 @@ def parse_single_trade(block):
         # Remove newlines and collapse whitespace
         asset_section = re.sub(r"\s+", " ", asset_section).strip()
         trade["asset"] = asset_section
+
+    # A block that yielded no asset, ticker, or transaction type isn't a real
+    # trade — it's likely leftover boilerplate (e.g. a page-header repeat) or
+    # a stray metadata continuation line that slipped past the block split.
+    # Drop it instead of returning an all-empty-but-truthy dict that would
+    # otherwise flow through the rest of the pipeline as a phantom trade.
+    if not (trade["asset"] or trade["ticker"] or trade["transaction_type"]):
+        return None
 
     return trade
 
