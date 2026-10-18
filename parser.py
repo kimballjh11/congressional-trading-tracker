@@ -32,6 +32,23 @@ def extract_text_from_pdf(pdf_bytes):
     return text
 
 
+def is_image_only_pdf(pdf_bytes):
+    """
+    Check whether a PDF has embedded images but no extractable text layer.
+
+    Some real House PTR filings are scanned/photographed rather than
+    digitally generated, so they have a page image but no text to parse.
+    Used to distinguish that permanent, known limitation from a transient
+    or unexpected extraction failure in logging.
+    """
+    try:
+        pdf_bytes.seek(0)
+        with pdfplumber.open(pdf_bytes) as pdf:
+            return any(page.images for page in pdf.pages)
+    except Exception:
+        return False
+
+
 def extract_filer_info(text):
     """Pull the filer's name and state/district from the PDF header."""
     name = ""
@@ -290,7 +307,11 @@ def parse_house_filing(filing):
 
     text = extract_text_from_pdf(pdf_bytes)
     if not text:
-        print(f"  No text extracted from PDF")
+        if is_image_only_pdf(pdf_bytes):
+            print(f"  Skipping {filing.get('filing_id', '?')}: image-only (scanned) PDF, "
+                  f"no OCR support — trades in this filing are unrecoverable")
+        else:
+            print(f"  No text extracted from PDF ({filing.get('filing_id', '?')})")
         return []
 
     name, state = extract_filer_info(text)
