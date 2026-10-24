@@ -3,7 +3,7 @@
 import os
 from datetime import datetime
 
-from config import RUN_LOG_FILE, DATA_DIR
+from config import RUN_LOG_FILE, DATA_DIR, MAX_FILINGS_PER_RUN
 from scraper import get_new_trades, load_seen_trades, save_seen_trades
 from senate_scraper import get_new_senate_trades
 from parser import parse_all_filings
@@ -68,6 +68,16 @@ def run():
     filings_count = len(all_filings)
     print(f"\nTotal new filings: {filings_count} "
           f"(House: {len(house_filings)}, Senate: {len(senate_filings)})")
+
+    if filings_count > MAX_FILINGS_PER_RUN:
+        print(f"\nWARNING: {filings_count} new filings found, which exceeds "
+              f"the per-run cap of {MAX_FILINGS_PER_RUN} (likely a scraper "
+              f"was down and just recovered). Processing only the first "
+              f"{MAX_FILINGS_PER_RUN} this run — the remaining "
+              f"{filings_count - MAX_FILINGS_PER_RUN} stay unmarked as seen "
+              f"and will be picked up on future runs.")
+        all_filings = all_filings[:MAX_FILINGS_PER_RUN]
+        filings_count = len(all_filings)
 
     if not all_filings:
         try:
