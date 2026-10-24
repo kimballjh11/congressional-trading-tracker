@@ -84,6 +84,20 @@ EMAIL_MIN_SCORE = 25
 # Seconds to wait on any single HTTP request before giving up
 REQUEST_TIMEOUT = 30
 
+# Safety cap on how many new filings a single pipeline run will process.
+# If a scraper has been down for an extended stretch (the Senate EFDS
+# backend has gone months at a time without responding), the very next
+# successful search can report thousands of filings that were never
+# marked "seen". Parsing + enriching + scoring that entire backlog in one
+# run — especially the per-ticker stock lookups — can run long enough to
+# hit GitHub Actions' 6-hour job timeout before STEP 5 ever sends the
+# email, which means NONE of those filings get marked seen either: the
+# exact same multi-thousand-filing backlog (and the exact same timeout)
+# just repeats on every future run. Capping the batch keeps each run
+# bounded and lets the backlog drain a little at a time across runs
+# instead of getting stuck in that loop forever.
+MAX_FILINGS_PER_RUN = 200
+
 # SMTP server settings (Gmail default)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
