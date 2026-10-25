@@ -23,9 +23,19 @@ jobs:
         with:
           path: data
           # Caches can't be overwritten, so save under a new key each run and
-          # restore the most recent one; a fixed key froze the seen list
+          # restore the most recent one; a fixed key froze the seen list.
+          # IMPORTANT: restore-keys must end in "-" (a trailing hyphen).
+          # actions/cache tries an EXACT match on each restore-key before
+          # falling back to a prefix search, and an exact match always wins
+          # over a more recent partial match. A bare "pipeline-data" (no
+          # trailing hyphen) exactly matches a one-time cache entry literally
+          # named "pipeline-data" that was created back when this workflow
+          # used a static key, which permanently shadows every newer
+          # "pipeline-data-<run_id>" cache from ever being restored again,
+          # freezing the seen-filings list forever. See
+          # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/caching-dependencies-to-speed-up-workflows#cache-key-matching
           key: pipeline-data-${{ github.run_id }}
-          restore-keys: pipeline-data
+          restore-keys: pipeline-data-
 
       - name: Install dependencies
         run: pip install -r requirements.txt
