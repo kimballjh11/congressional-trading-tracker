@@ -107,6 +107,13 @@ def parse_single_trade(block):
         "description": "",
     }
 
+    # Amended (and deleted) transactions carry a numeric transaction-reference
+    # ID (e.g. "2000152831") in the PDF's "ID" column, rendered directly in
+    # front of the owner code/asset name since there's no visual separator.
+    # New transactions never show this ID. Strip it before any other parsing
+    # so it can't pollute the asset name or hide a real owner code behind it.
+    block = re.sub(r"^\d{6,}\s+", "", block)
+
     # Extract owner code (first 1-2 uppercase letters)
     owner_match = re.match(r"^([A-Z]{1,2})\s+", block)
     if owner_match:
