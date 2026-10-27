@@ -22,10 +22,19 @@ def log(message):
     print(line.strip())
 
 
-def mark_filings_seen(filings):
-    """Record filings as processed so future runs don't report them again."""
+def mark_filings_seen(filing_ids):
+    """
+    Record filing IDs as processed so future runs don't report them again.
+
+    Callers must pass only filing IDs that were ACTUALLY fetched/parsed
+    successfully (e.g. parse_all_filings()'s returned successful_filing_ids),
+    never the raw list of everything the scrapers found — a filing whose
+    report download failed (network error, bot-detection block, etc.) must
+    stay unseen so it gets retried on the next run instead of being
+    silently and permanently lost.
+    """
     seen = load_seen_trades()
-    seen.update(f["filing_id"] for f in filings)
+    seen.update(filing_ids)
     save_seen_trades(seen)
 
 
@@ -88,11 +97,12 @@ def run():
 
     # ─── STEP 2: PARSE ───
     trades = []
+    parsed_filing_ids = []
     try:
         print("\n" + "=" * 60)
         print("STEP 2: Parsing trade details from filings")
         print("=" * 60)
-        trades = parse_all_filings(all_filings)
+        trades, parsed_filing_ids = parse_all_filings(all_filings)
     except Exception as e:
         log(f"ERROR in parser: {e}")
         error_occurred = True
@@ -108,8 +118,12 @@ def run():
             error_occurred = True
             email_sent = False
 
-        if email_sent and not error_occurred:
-            mark_filings_seen(all_filings)
+        # Mark only the filings that were actually fetched/parsed (even
+        # though none of them produced trades) — a filing that failed to
+        # download must NOT be marked seen just because it happened to
+        # land in a batch alongside filings that were genuinely empty.
+        if email_sent and not error_occurred and parsed_filing_ids:
+            mark_filings_seen(parsed_filing_ids)
 
         email_status = "sent" if email_sent else "FAILED"
         status = "SUCCESS" if not error_occurred else "PARTIAL"
@@ -151,9 +165,13 @@ def run():
         error_occurred = True
 
     # Only mark filings seen once the report went out, so a crash or
-    # failed email means they get picked up again on the next run
+    # failed email means they get picked up again on the next run.
+    # Use parsed_filing_ids (not all_filings) — a filing whose report
+    # download failed (network error, bot-detection block, etc.) must
+    # stay unseen so it's retried, instead of being lumped in with
+    # filings that were successfully processed.
     if email_sent and scored:
-        mark_filings_seen(all_filings)
+        mark_filings_seen(parsed_filing_ids)
 
     status = "SUCCESS" if not error_occurred else "PARTIAL"
     email_status = "sent" if email_sent else "FAILED"
