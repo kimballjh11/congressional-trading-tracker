@@ -96,8 +96,19 @@ def fetch_senate_committee_data():
     member_committees = {}
 
     # Split by senator anchor points: <a name="LastNameST">
-    # Then extract senator name and committee links from each block
-    blocks = re.split(r'<a\s+name="(\w+)">', html)
+    # Then extract senator name and committee links from each block.
+    # The anchor value isn't always a plain word: multi-word last names
+    # ("Blunt RochesterDE", "Cortez MastoNV", "Van HollenMD"), hyphenated
+    # names ("Hyde-SmithMS"), and accented/percent-encoded names
+    # ("Luj%C3%A1nNM") all appear verbatim in the anchor. A `\w+` capture
+    # stops at the first such space/hyphen/`%`, so the anchor tag itself
+    # fails to match for those senators — their block never gets split
+    # off and silently merges into the PRECEDING senator's content,
+    # leaking that senator's own committees into the preceding senator's
+    # entry while leaving the affected senator completely absent from the
+    # map. Matching up to the closing quote instead captures the whole
+    # anchor value regardless of what characters it contains.
+    blocks = re.split(r'<a\s+name="([^"]+)">', html)
 
     for i in range(1, len(blocks) - 1, 2):
         anchor = blocks[i]
