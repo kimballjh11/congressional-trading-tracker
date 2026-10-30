@@ -37,7 +37,10 @@ def extract_filer_info(text):
     name = ""
     state = ""
 
-    name_match = re.search(r"Name:\s*Hon\.?\s*(.+)", text)
+    # "Hon." is the normal title prefix, but it's absent for some filers
+    # (e.g. members seated via a recent special election) — if we require
+    # it literally, the whole match fails and we silently lose the name.
+    name_match = re.search(r"Name:\s*(?:Hon\.?\s*)?(.+)", text)
     if name_match:
         name = name_match.group(1).strip()
 
