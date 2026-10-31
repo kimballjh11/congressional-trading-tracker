@@ -48,12 +48,69 @@ def extract_filer_info(text):
     return name, state
 
 
+# A trade's optional metadata footer consists of a mandatory "Filing Status:"
+# line (rendered as "F\x00* S\x00*:" due to the PDF's mangled font encoding —
+# see parse_single_trade), optionally followed by "Subholding Of:",
+# "Location:", and/or "Description:" lines, in any order. This footer
+# reliably marks the END of one trade entry.
+_FILING_STATUS_LINE = re.compile(r"^F\x00*\w*\s*S\x00*\w*\s*:")
+_FOOTER_LABEL_LINE = re.compile(r"^(?:S\x00*\w*\s+O\x00*\s*:|L\x00*\s*:|D\x00*\w*\s*:)")
+
+# Multi-page filings repeat the table's column-header row at the top of every
+# page ("ID Owner Asset Transaction Date Notification Amount Cap. / Type Date
+# Gains > / $200?"). Left in place, this boilerplate starts with "ID Owner"
+# (which looks exactly like an owner-code-prefixed trade) and can land in the
+# middle of a real trade that wraps across the page break, corrupting it.
+_REPEATED_PAGE_HEADER = re.compile(
+    r"ID Owner Asset Transaction Date Notification Amount Cap\.\n"
+    r"Type Date Gains >\n\$200\?\n?"
+)
+
+
+def split_trade_blocks(trade_section):
+    """
+    Split the raw trade section into one block of text per trade.
+
+    Trades cannot be reliably split by looking for their *start*: when a
+    member holds an asset directly (not through a spouse, dependent, or
+    joint account), the PDF's owner-code column is blank, so the trade
+    simply starts with the asset name — which can be indistinguishable from
+    ordinary wrapped text (e.g. a bond name that wraps to "ED L FACS BRD..."
+    or "D Cumulative Perpetual..." looks just like a 1-2 letter owner code
+    followed by a capitalized word). Instead, split on each trade's *end*:
+    the mandatory "Filing Status:" footer line (plus any optional
+    Subholding Of / Location / Description lines that immediately follow
+    it), which is present exactly once per trade regardless of ownership.
+    """
+    blocks = []
+    current_lines = []
+    consuming_footer = False
+
+    for line in trade_section.split("\n"):
+        if not line.strip():
+            continue
+
+        if consuming_footer and not _FOOTER_LABEL_LINE.match(line):
+            # We've finished consuming this trade's footer and this line
+            # isn't more footer metadata, so it starts the next trade.
+            blocks.append("\n".join(current_lines))
+            current_lines = [line]
+            consuming_footer = False
+        else:
+            current_lines.append(line)
+
+        if _FILING_STATUS_LINE.match(line):
+            consuming_footer = True
+
+    if current_lines:
+        blocks.append("\n".join(current_lines))
+
+    return blocks
+
+
 def parse_trades_from_text(text):
     """
     Parse individual trades from the PDF text.
-
-    Each trade block starts with an owner code (SP, JT, DC, etc.)
-    followed by the asset name, transaction type, dates, and amount.
     """
     trades = []
 
@@ -67,14 +124,9 @@ def parse_trades_from_text(text):
     start = header_match.end()
     end = footer_match.start() if footer_match else len(text)
     trade_section = text[start:end].strip()
+    trade_section = _REPEATED_PAGE_HEADER.sub("", trade_section).strip()
 
-    # Split into trade blocks. Each trade starts with an owner code
-    # (1-2 uppercase letters) at the start of a line, followed by the asset.
-    # "Filing Status:" lines mark metadata that follows each trade.
-    # We split on owner codes that start a new trade entry.
-    trade_blocks = re.split(r"\n(?=[A-Z]{1,2} [A-Z])", trade_section)
-
-    for block in trade_blocks:
+    for block in split_trade_blocks(trade_section):
         block = block.strip()
         if not block:
             continue
@@ -107,8 +159,13 @@ def parse_single_trade(block):
         "description": "",
     }
 
-    # Extract owner code (first 1-2 uppercase letters)
-    owner_match = re.match(r"^([A-Z]{1,2})\s+", block)
+    # Extract owner code. Only match the known House PTR codes (SP = spouse,
+    # DC = dependent child, JT = joint) — matching *any* leading 1-2 capital
+    # letters is too loose and false-positives on self-owned assets whose
+    # name happens to start with a short all-caps word followed by a space,
+    # e.g. "US Treasury Bills..." or "GE HealthCare...", stealing part of
+    # the asset name and reporting a bogus owner code.
+    owner_match = re.match(r"^(SP|DC|JT)\s+", block)
     if owner_match:
         trade["owner"] = owner_match.group(1)
         block = block[owner_match.end():]
@@ -161,17 +218,63 @@ def parse_single_trade(block):
             else:
                 trade["transaction_type"] = tx_code
 
-    # Extract asset name — everything from start of block up to the transaction type letter
-    # before the date. We grab the text, remove the ticker bracket, and clean it up.
+    # Extract asset name. The PDF's fixed-width columns don't always respect
+    # where the asset name text actually ends — bonds/Treasuries/munis (whose
+    # name includes a maturity date and coupon rate) and even some stock
+    # trades (whose name ends in "... Common Stock") routinely wrap their
+    # remaining text to the line *after* the transaction type/dates/amount,
+    # e.g.:
+    #   "UNITED STATES TREAS SER AF- P 06/16/2026 07/01/2026 $15,001 -
+    #    2027; 4.125%; Due 10/31/2027 [GS] $50,000"
+    #   "Ferguson Enterprises Inc. Common P 12/12/2025 01/06/2026 $15,001 -
+    #    Stock (FERG) [ST] $50,000"
+    # Taking only the text before the first date (as before) would silently
+    # drop that trailing fragment ("2027; 4.125%; Due 10/31/2027" / "Stock
+    # (FERG)"). Instead, isolate the whole trade-line portion of the block
+    # (everything before the mandatory "Filing Status:" footer, which always
+    # renders with a null-padded label like "F\x00\x00\x00\x00\x00 S...:"),
+    # then strip out just the transaction-data tokens (type letter, dates,
+    # dollar amounts, bracket asset-type code) — whatever text remains,
+    # wherever it appears, is the (possibly wrapped) asset name.
     if dates:
-        asset_section = block.split(dates[0])[0]
-        # Remove transaction type letter at the end
-        asset_section = re.sub(r"\s+[PSE]\s*(\(partial\)\s*)?$", "", asset_section)
+        footer_match = re.search(r"F\x00*\w*\s*S\x00*\w*\s*:", block)
+        trade_line = block[:footer_match.start()] if footer_match else block
+
+        asset_section = trade_line
+        if tx_match:
+            # Remove only this specific transaction-type-letter match (not
+            # every standalone P/S/E in the line) to avoid stripping letters
+            # that happen to appear elsewhere in the asset name.
+            asset_section = (
+                asset_section[:tx_match.start()] + " " + asset_section[tx_match.end():]
+            )
+        # Remove only the transaction/notification date values themselves
+        # (their first occurrence each, in order) rather than every
+        # MM/DD/YYYY-shaped substring — a bond/Treasury's own maturity date
+        # (e.g. "...Due 10/31/2027") can appear later in the asset name and
+        # must not be stripped.
+        asset_section = re.sub(re.escape(dates[0]), " ", asset_section, count=1)
+        if len(dates) >= 2:
+            asset_section = re.sub(re.escape(dates[1]), " ", asset_section, count=1)
+        # Drop dollar amounts. A lower-bound amount is often followed by a
+        # range-separator dash (possibly across a line wrap); fold that
+        # dash into the same removal so it isn't mistaken for a hyphen
+        # that's actually part of the asset name (e.g. "... Inc. -").
+        asset_section = re.sub(r"\$[\d,]+\s*-\s*", " ", asset_section)
+        asset_section = re.sub(r"\$[\d,]+", " ", asset_section)
         # Remove bracket codes like [ST], [GS], [OP]
-        asset_section = re.sub(r"\[.{1,4}\]", "", asset_section)
+        asset_section = re.sub(r"\[.{1,4}\]", " ", asset_section)
         # Remove newlines and collapse whitespace
         asset_section = re.sub(r"\s+", " ", asset_section).strip()
         trade["asset"] = asset_section
+
+    # A block that yielded no asset, ticker, or transaction type isn't a real
+    # trade — it's likely leftover boilerplate (e.g. a page-header repeat) or
+    # a stray metadata continuation line that slipped past the block split.
+    # Drop it instead of returning an all-empty-but-truthy dict that would
+    # otherwise flow through the rest of the pipeline as a phantom trade.
+    if not (trade["asset"] or trade["ticker"] or trade["transaction_type"]):
+        return None
 
     return trade
 
