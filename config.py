@@ -57,15 +57,23 @@ CONTRARIAN_LOOKBACK_DAYS = 35    # days of price history to check
 
 # ─── COMMITTEE → SECTOR MAPPINGS ───
 # Maps committee name keywords to stock sectors they oversee.
+# NOTE: these sector names must match yfinance's `info["sector"]` taxonomy
+# exactly — it does NOT use GICS sector names. Confirmed via live lookups
+# (e.g. AAPL/NVDA/MSFT -> "Technology", not "Information Technology";
+# AMZN/HD -> "Consumer Cyclical", not "Consumer Discretionary";
+# KO/WMT -> "Consumer Defensive", not "Consumer Staples";
+# FCX/LIN -> "Basic Materials", not "Materials"). Using the GICS names
+# silently breaks the +25-point committee/sector match signal since
+# `sector in sectors` never matches.
 COMMITTEE_SECTOR_MAP = {
     "Energy and Commerce": [
-        "Energy", "Healthcare", "Communication Services", "Consumer Discretionary",
+        "Energy", "Healthcare", "Communication Services", "Consumer Cyclical",
     ],
     "Financial Services": ["Financial Services", "Real Estate"],
     "Armed Services": ["Industrials"],
-    "Agriculture": ["Consumer Staples", "Materials"],
-    "Science": ["Information Technology"],
-    "Technology": ["Information Technology"],
+    "Agriculture": ["Consumer Defensive", "Basic Materials"],
+    "Science": ["Technology"],
+    "Technology": ["Technology"],
     "Transportation": ["Industrials", "Energy"],
 }
 
