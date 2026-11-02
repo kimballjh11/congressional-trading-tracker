@@ -37,8 +37,9 @@ POINTS_LARGE_TRADE_100K = 15   # Upper bound > $100,000
 POINTS_LARGE_TRADE_50K = 10    # Upper bound > $50,000
 
 # Signal 3: Disclosure delay
-POINTS_DELAY_NEAR_LIMIT = 15   # 38–45 days (near the 45-day legal deadline)
-POINTS_DELAY_LATE = 8          # 30–37 days
+POINTS_DELAY_VIOLATION = 20   # >45 days (confirmed STOCK Act violation — past the legal deadline)
+POINTS_DELAY_NEAR_LIMIT = 15  # 38–45 days (near the 45-day legal deadline)
+POINTS_DELAY_LATE = 8         # 30–37 days
 
 # Signal 4: Cluster trading (multiple members on same ticker)
 POINTS_CLUSTER_3_PLUS = 20     # 3+ different members
