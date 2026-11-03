@@ -134,20 +134,33 @@ def score_cluster_trades(trades):
 # ─── SIGNAL 5: SPOUSE/DEPENDENT TRADES ───
 
 def score_spouse_dependent(trade):
-    """+10 if the trade was made by a spouse or dependent."""
-    owner = trade.get("owner", "").upper()
-    description = trade.get("description", "").lower()
-    asset = trade.get("asset", "").lower()
+    """+10 if the trade was made by a spouse or dependent.
 
-    # Owner codes: SP = spouse, DC = dependent child, JT = joint
-    spouse_owners = {"SP", "DC"}
+    House PTRs use 2-letter owner codes (SP/DC/JT). Senate PTRs instead
+    render the owner column as the full plain-English word — confirmed
+    live against real senate.gov reports to be exactly "Spouse", "Child",
+    or "Joint" (never "Dependent"/"Dependent Child"). Without also
+    recognizing these, every Senate spouse/dependent/joint trade silently
+    scored 0 on this signal.
+    """
+    owner = trade.get("owner", "").strip().upper()
+    description = trade.get("description", "").lower()
+
+    # House codes: SP = spouse, DC = dependent child, JT = joint.
+    # Senate full-word labels (and a couple of legacy/guessed variants,
+    # harmless to also accept even though no live evidence they occur).
+    spouse_owners = {"SP", "SPOUSE"}
+    dependent_owners = {"DC", "CHILD", "DEPENDENT", "DEPENDENT CHILD"}
+    joint_owners = {"JT", "JOINT", "JOINT TENANT", "JOINT TENANTS"}
     spouse_keywords = ["spouse", "dependent", "joint"]
 
     if owner in spouse_owners:
-        label = "Spouse" if owner == "SP" else "Dependent"
-        return POINTS_SPOUSE_DEPENDENT, f"{label} trade (owner: {owner}, +{POINTS_SPOUSE_DEPENDENT})"
+        return POINTS_SPOUSE_DEPENDENT, f"Spouse trade (owner: {owner}, +{POINTS_SPOUSE_DEPENDENT})"
 
-    if owner == "JT" or any(kw in description for kw in spouse_keywords):
+    if owner in dependent_owners:
+        return POINTS_SPOUSE_DEPENDENT, f"Dependent trade (owner: {owner}, +{POINTS_SPOUSE_DEPENDENT})"
+
+    if owner in joint_owners or any(kw in description for kw in spouse_keywords):
         return POINTS_SPOUSE_DEPENDENT, f"Joint/spouse trade (+{POINTS_SPOUSE_DEPENDENT})"
 
     return 0, ""
